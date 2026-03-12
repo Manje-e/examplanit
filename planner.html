@@ -1,0 +1,383 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>ExamPlanIt — My Study Plan</title>
+<script src="https://unpkg.com/@supabase/supabase-js@2"></script>
+<link href="https://fonts.googleapis.com/css2?family=Nunito:wght@400;600;700;800;900&family=Baloo+2:wght@700;800;900&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="css/style.css">
+<style>
+#planner-screen { display: none; padding: 24px 24px 80px; }
+
+.planner-card {
+  background: #fff; border-radius: 24px;
+  box-shadow: 0 8px 32px rgba(0,0,0,0.10);
+  max-width: 1200px; margin: 0 auto; overflow: visible;
+}
+
+/* HEADER */
+.planner-header {
+  background: linear-gradient(120deg, #fce4f0, #e8eeff, #d8f5ec);
+  padding: 16px 28px; border-radius: 24px 24px 0 0;
+  display: flex; align-items: center; gap: 14px;
+}
+.planner-logo { font-family: 'Baloo 2', cursive; font-size: 1.6rem; color: #8090c8; flex: 1; }
+.planner-logo em { color: #c080b0; font-style: normal; }
+.header-actions { display: flex; gap: 10px; }
+.replan-btn {
+  padding: 6px 16px; background: #fff; border: 1.5px solid #e0d8f0;
+  border-radius: 20px; font-size: 0.68rem; font-weight: 800;
+  color: #a090c0; cursor: pointer; font-family: 'Nunito', sans-serif;
+}
+.replan-btn:hover { border-color: #a080d0; color: #7050a0; }
+.recalibrate-btn {
+  padding: 6px 16px; background: linear-gradient(135deg, #c8b8f8, #a080d0);
+  border: none; border-radius: 20px; font-size: 0.68rem; font-weight: 800;
+  color: #fff; cursor: pointer; font-family: 'Nunito', sans-serif;
+}
+
+/* DASHBOARD */
+.dashboard-section { padding: 20px 28px; border-bottom: 1px solid #f5f0ff; }
+.dashboard-card {
+  background: #fdfbff; border: 1.5px solid #ede8f8;
+  border-radius: 16px; padding: 24px 28px;
+  box-shadow: 0 4px 16px rgba(160,128,208,0.08);
+}
+.dashboard-title { font-family: 'Baloo 2', cursive; font-size: 0.9rem; color: #9070b0; margin-bottom: 20px; text-align: center; }
+.rings-row { display: flex; gap: 40px; align-items: center; justify-content: center; flex-wrap: wrap; }
+.ring-wrap { display: flex; flex-direction: column; align-items: center; gap: 8px; }
+
+.ring-container { position: relative; width: 140px; height: 140px; }
+.ring-svg { transform: rotate(-90deg); }
+.ring-bg { fill: none; stroke: #ede8f8; stroke-width: 11; }
+.ring-fill { fill: none; stroke-width: 11; stroke-linecap: round; transition: stroke-dashoffset 0.8s cubic-bezier(.4,0,.2,1); }
+.ring-fill.today  { stroke: #a080d0; }
+.ring-fill.topics { stroke: #c080b0; }
+.ring-fill.bonus  { stroke: #80b0d0; }
+
+/* Ring containers */
+.ring-container { position: relative; display: inline-block; }
+
+.ring-inner { position: absolute; top: 50%; left: 50%; transform: translate(-50%,-50%); text-align: center; line-height: 1.2; }
+.ring-val { font-family: 'Baloo 2', cursive; font-size: 1.2rem; font-weight: 800; color: #555; }
+.ring-unit { font-size: 0.62rem; color: #b0a0c8; font-family: 'Nunito', sans-serif; font-weight: 700; }
+.ring-label { font-family: 'Nunito', sans-serif; font-size: 0.72rem; font-weight: 700; color: #a090c0; text-align: center; max-width: 130px; }
+
+
+
+.nudge-banner {
+  display: none; margin-top: 16px; background: #FFF8E8; border: 1.5px solid #E8C96A;
+  border-radius: 10px; padding: 8px 16px; font-family: 'Nunito', sans-serif;
+  font-weight: 700; font-size: 0.78rem; color: #A07820; text-align: center;
+}
+
+/* TOAST */
+.toast-msg {
+  position: fixed; bottom: 32px; left: 50%; transform: translateX(-50%) translateY(20px);
+  background: linear-gradient(135deg, #f8f0ff, #fce4f0);
+  border: 1.5px solid #e0d0f0; border-radius: 20px;
+  padding: 12px 24px; font-family: 'Nunito', sans-serif; font-weight: 800;
+  font-size: 0.92rem; color: #7050a0;
+  box-shadow: 0 8px 24px rgba(160,128,208,0.2);
+  z-index: 9999; opacity: 0; pointer-events: none;
+  transition: opacity 0.3s, transform 0.3s;
+}
+.toast-msg.show { opacity: 1; transform: translateX(-50%) translateY(0); }
+
+/* BODY */
+.planner-body { display: grid; grid-template-columns: 1fr 360px; align-items: start; }
+
+/* TOPICS */
+.topics-section { padding: 20px 28px; border-right: 1px solid #f5f0ff; }
+.topics-card {
+  background: #fdfbff; border: 1.5px solid #ede8f8;
+  border-radius: 16px; overflow: hidden;
+  box-shadow: 0 4px 16px rgba(160,128,208,0.08);
+}
+.topics-card-title { padding: 12px 18px; font-family: 'Baloo 2', cursive; font-size: 0.88rem; color: #9070b0; border-bottom: 1px solid #f0eaf8; background: #faf6ff; }
+
+.subject-group { border-bottom: 1px solid #f0eaf8; }
+.subject-group:last-child { border-bottom: none; }
+.subject-row { display: flex; align-items: center; gap: 10px; padding: 12px 18px; cursor: pointer; background: #faf6ff; transition: background 0.15s; }
+.subject-row:hover { background: #f3eeff; }
+.subject-row.amber { background: #fff8e6; }
+.subj-row-emoji { font-size: 1.1rem; }
+.subj-row-name { font-family: 'Nunito', sans-serif; font-weight: 800; font-size: 0.88rem; color: #555; flex: 1; }
+.subject-row.amber .subj-row-name { color: #a07000; }
+.subj-badge { font-size: 1.1rem; margin-left: 2px; }
+.subj-row-pct { font-size: 0.68rem; font-weight: 700; color: #9070b0; margin-right: 4px; white-space: nowrap; }
+.subj-prog-wrap { width: 60px; height: 6px; background: #ede8f8; border-radius: 4px; overflow: hidden; }
+.subj-prog-bar { height: 100%; background: linear-gradient(90deg, #c8b8f8, #a080d0); border-radius: 4px; transition: width 0.4s; }
+.chevron { font-size: 0.68rem; color: #c0b0d8; transition: transform 0.2s; margin-left: 4px; }
+.subject-row.open .chevron { transform: rotate(180deg); }
+
+.topics-list { display: none; }
+.topics-list.open { display: block; }
+
+.topic-row {
+  display: grid; grid-template-columns: 1fr auto auto auto;
+  align-items: center; gap: 10px;
+  padding: 8px 18px 8px 40px; border-top: 1px solid #f5f0ff;
+  transition: background 0.15s; cursor: grab;
+}
+.topic-row:hover { background: #fdfaff; }
+.topic-row.amber-topic { background: #fffbf0; }
+.topic-row.revision-row { background: #eef6ff; border-left: 3px solid #a0c8f0; }
+.topic-row.revision-row:hover { background: #e4f0ff; }
+
+.topic-name { font-family: 'Nunito', sans-serif; font-size: 0.82rem; font-weight: 600; color: #666; }
+.topic-name.done-text { text-decoration: line-through; color: #bbb; }
+.topic-time {
+  font-family: 'Nunito', sans-serif; font-size: 0.72rem; font-weight: 700;
+  color: #9070b0; background: #f0eaff; padding: 2px 8px;
+  border-radius: 6px; white-space: nowrap; text-align: center;
+}
+.topic-time.revision-time { background: #dceeff; color: #5090c0; }
+.topic-time.faded { opacity: 0.4; text-decoration: line-through; }
+.topic-check {
+  width: 18px; height: 18px; border-radius: 5px; border: 2px solid #d8d0f0;
+  background: #fff; cursor: pointer; display: flex; align-items: center; justify-content: center;
+  transition: all 0.2s; flex-shrink: 0;
+}
+.topic-check.checked { background: #a080d0; border-color: #a080d0; }
+.topic-check.checked::after { content: '✓'; color: #fff; font-size: 0.68rem; font-weight: 900; }
+.topic-check.rev-check { border-color: #a0c8f0; }
+.topic-check.rev-check.checked { background: #5090c0; border-color: #5090c0; }
+.topic-drag-handle { color: #d0c8e8; font-size: 0.9rem; cursor: grab; user-select: none; }
+
+/* SLOTS */
+.slots-section {
+  padding: 20px 20px;
+  position: sticky; top: 24px;
+  max-height: calc(100vh - 48px);
+  overflow-y: auto;
+}
+.slots-title { font-family: 'Baloo 2', cursive; font-size: 0.88rem; color: #9070b0; margin-bottom: 10px; }
+.add-slot-btn {
+  width: 100%; background: #fdfbff; border: 1.5px dashed #c0b0e0;
+  border-radius: 14px; padding: 11px; font-family: 'Nunito', sans-serif;
+  font-weight: 800; font-size: 0.82rem; color: #a080d0; cursor: pointer;
+  transition: all 0.2s; display: block; margin-bottom: 10px;
+}
+.add-slot-btn:hover { background: #f3eeff; border-color: #a080d0; }
+
+.slot-card {
+  background: #fff; border-radius: 14px; border: 1.5px solid #ede8f8;
+  box-shadow: 0 4px 16px rgba(160,128,208,0.08);
+  overflow: hidden; margin-bottom: 10px; transition: border-color 0.2s;
+}
+.slot-card.drag-over { border-color: #a080d0; background: #f8f4ff; }
+
+.slot-drop-zone {
+  padding: 16px; min-height: 64px; display: flex; align-items: center; justify-content: center;
+  color: #c0b0d8; font-family: 'Nunito', sans-serif; font-size: 0.78rem; font-weight: 700;
+  border-bottom: 1px solid #f0eaf8;
+}
+.slot-topic-loaded { padding: 12px 14px; border-bottom: 1px solid #f0eaf8; display: none; }
+.slot-topic-name { font-family: 'Nunito', sans-serif; font-weight: 800; font-size: 0.85rem; color: #555; }
+.slot-topic-meta { font-size: 0.68rem; color: #b0a0c8; font-family: 'Nunito', sans-serif; font-weight: 600; margin-top: 2px; }
+.slot-progress-bar-wrap { height: 5px; background: #f0eaf8; border-radius: 3px; overflow: hidden; margin-top: 6px; }
+.slot-progress-bar { height: 100%; background: linear-gradient(90deg, #c8b8f8, #a080d0); border-radius: 3px; transition: width 0.4s; }
+
+.slot-duration-pick { padding: 12px 14px; display: none; flex-direction: column; gap: 8px; border-bottom: 1px solid #f0eaf8; }
+.dur-label { font-family: 'Nunito', sans-serif; font-weight: 700; font-size: 0.75rem; color: #9070b0; }
+.dur-btns { display: flex; gap: 5px; flex-wrap: wrap; }
+.dur-btn {
+  background: #f0eaff; border: 1.5px solid #d8d0f0; color: #8060c0;
+  border-radius: 8px; padding: 4px 10px; font-family: 'Nunito', sans-serif;
+  font-weight: 700; font-size: 0.75rem; cursor: pointer; transition: all 0.15s;
+}
+.dur-btn:hover, .dur-btn.selected { background: #a080d0; color: #fff; border-color: #a080d0; }
+.dur-btn.disabled-dur { opacity: 0.3; cursor: not-allowed; pointer-events: none; }
+.dur-custom { display: flex; gap: 6px; align-items: center; }
+.dur-custom input {
+  width: 60px; border: 1.5px solid #d8d0f0; border-radius: 8px;
+  padding: 4px 8px; font-family: 'Nunito', sans-serif; font-weight: 700; font-size: 0.75rem; color: #555; outline: none;
+}
+.dur-max-note { font-size: 0.62rem; color: #c080b0; font-family: 'Nunito', sans-serif; font-weight: 700; }
+.start-timer-btn {
+  background: linear-gradient(135deg, #c8b8f8, #a080d0); color: #fff; border: none;
+  border-radius: 10px; padding: 8px; font-family: 'Nunito', sans-serif;
+  font-weight: 800; font-size: 0.82rem; cursor: pointer; width: 100%;
+}
+
+.slot-timer { padding: 12px 14px; display: none; flex-direction: column; align-items: center; gap: 8px; border-bottom: 1px solid #f0eaf8; }
+.timer-display { font-family: 'Baloo 2', cursive; font-size: 2.2rem; font-weight: 800; color: #555; letter-spacing: 2px; }
+.timer-display.warning { color: #c080b0; animation: blink 1s infinite; }
+@keyframes blink { 0%,100%{opacity:1}50%{opacity:0.5} }
+.timer-controls { display: flex; gap: 8px; }
+.timer-btn { border: none; border-radius: 10px; padding: 6px 14px; font-family: 'Nunito', sans-serif; font-weight: 800; font-size: 0.75rem; cursor: pointer; }
+.timer-btn.pause { background: #f0eaff; color: #8060c0; }
+.timer-btn.stop { background: #fce4f0; color: #c080b0; }
+.timer-btn.stop:hover { background: #c080b0; color: #fff; }
+
+.slot-done-ask { padding: 12px 14px; display: none; flex-direction: column; gap: 8px; border-bottom: 1px solid #f0eaf8; }
+.done-ask-title { font-family: 'Nunito', sans-serif; font-weight: 800; font-size: 0.85rem; color: #555; text-align: center; }
+.done-ask-btns { display: flex; gap: 8px; }
+.done-yes-btn { flex: 1; background: linear-gradient(135deg, #c8b8f8, #a080d0); color: #fff; border: none; border-radius: 10px; padding: 8px; font-family: 'Nunito', sans-serif; font-weight: 800; font-size: 0.78rem; cursor: pointer; }
+.done-more-btn { flex: 1; background: #fce4f0; color: #c080b0; border: 1.5px solid #f0b8d0; border-radius: 10px; padding: 8px; font-family: 'Nunito', sans-serif; font-weight: 800; font-size: 0.78rem; cursor: pointer; }
+.done-more-btn:hover { background: #c080b0; color: #fff; border-color: #c080b0; }
+
+.slot-more-time { padding: 12px 14px; display: none; flex-direction: column; gap: 8px; border-bottom: 1px solid #f0eaf8; background: #fdfaff; }
+.more-time-label { font-family: 'Nunito', sans-serif; font-weight: 700; font-size: 0.75rem; color: #9070b0; }
+.more-time-mins { display: flex; gap: 5px; flex-wrap: wrap; }
+.more-min-btn { background: #f0eaff; border: 1.5px solid #d8d0f0; color: #8060c0; border-radius: 8px; padding: 4px 10px; font-family: 'Nunito', sans-serif; font-weight: 700; font-size: 0.72rem; cursor: pointer; }
+.more-min-btn.selected { background: #a080d0; color: #fff; border-color: #a080d0; }
+.more-time-type-label { font-family: 'Nunito', sans-serif; font-weight: 700; font-size: 0.72rem; color: #9070b0; }
+.more-time-type { display: flex; gap: 6px; }
+.effort-btn { flex: 1; border-radius: 8px; padding: 6px 4px; font-family: 'Nunito', sans-serif; font-weight: 700; font-size: 0.68rem; cursor: pointer; border: 1.5px solid #d8d0f0; background: #fdfbff; color: #888; text-align: center; }
+.effort-btn.selected-budget { background: #e8f5ec; border-color: #80c898; color: #208050; }
+.effort-btn.selected-bonus { background: #fff8e4; border-color: #d0b050; color: #a07010; }
+.confirm-more-btn { background: linear-gradient(135deg, #f0d8f8, #c080b0); color: #fff; border: none; border-radius: 10px; padding: 7px; font-family: 'Nunito', sans-serif; font-weight: 800; font-size: 0.78rem; cursor: pointer; width: 100%; }
+
+.slot-footer { padding: 6px 14px; display: flex; justify-content: flex-end; }
+.remove-slot-btn { background: none; border: none; color: #d0c8e0; font-size: 0.68rem; cursor: pointer; font-family: 'Nunito', sans-serif; font-weight: 600; }
+.remove-slot-btn:hover { color: #c080b0; }
+
+/* STICKER PICKER */
+.sticker-overlay {
+  position: fixed; top: 0; left: 0; right: 0; bottom: 0;
+  background: rgba(80,60,120,0.4); z-index: 9990;
+  display: none; align-items: center; justify-content: center;
+}
+.sticker-overlay.open { display: flex; }
+.sticker-box {
+  background: #fff; border-radius: 24px; padding: 28px;
+  box-shadow: 0 16px 48px rgba(0,0,0,0.2);
+  text-align: center; max-width: 340px; width: 90%;
+}
+.sticker-box-title { font-family: 'Baloo 2', cursive; font-size: 1.1rem; color: #9070b0; margin-bottom: 6px; }
+.sticker-box-sub { font-family: 'Nunito', sans-serif; font-size: 0.78rem; color: #b0a0c8; margin-bottom: 16px; }
+.sticker-grid { display: flex; flex-wrap: wrap; gap: 12px; justify-content: center; margin-bottom: 16px; }
+.sticker-opt { font-size: 2rem; cursor: pointer; border-radius: 12px; padding: 8px; border: 2px solid transparent; transition: all 0.15s; }
+.sticker-opt:hover, .sticker-opt.selected { border-color: #a080d0; background: #f0eaff; transform: scale(1.2); }
+.sticker-confirm-btn {
+  background: linear-gradient(135deg, #c8b8f8, #a080d0); color: #fff; border: none;
+  border-radius: 12px; padding: 10px 28px; font-family: 'Nunito', sans-serif;
+  font-weight: 800; font-size: 0.9rem; cursor: pointer;
+}
+
+.planner-loading {
+  min-height: 100vh; display: flex; align-items: center; justify-content: center;
+  background: linear-gradient(135deg, #fce4f0 0%, #e8eeff 50%, #d8f5ec 100%);
+  font-family: 'Nunito', sans-serif; font-size: 1.1rem; color: #9070b0; font-weight: 700;
+}
+
+@media (max-width: 860px) {
+  .planner-body { grid-template-columns: 1fr; }
+  .slots-section { position: static; max-height: none; }
+}
+</style>
+</head>
+<body>
+
+<div class="planner-loading" id="planner-loading">Loading your plan... ✨</div>
+
+<div id="planner-screen">
+<div class="planner-card">
+
+  <div class="planner-header">
+    <div class="planner-logo"><em>Exam</em>PlanIt 📖</div>
+    <div class="header-actions">
+      <button class="replan-btn" id="speed-btn" onclick="toggleSpeedMode()" title="60x speed for testing">⚡ Speed Mode: OFF</button>
+      <button class="replan-btn" onclick="goReplan()">← Replan</button>
+      <button class="recalibrate-btn" onclick="recalibrate()">🔄 Recalibrate</button>
+    </div>
+  </div>
+
+  <div class="dashboard-section">
+    <div class="dashboard-card">
+      <div class="dashboard-title">📊 Dashboard</div>
+      <div class="rings-row">
+        <div class="ring-wrap">
+          <div class="ring-container" id="today-ring">
+            <svg class="ring-svg" id="ring-today-svg" width="140" height="140" viewBox="0 0 140 140">
+              <circle class="ring-bg" cx="70" cy="70" r="58"/>
+              <circle class="ring-fill today" id="ring-today-fill" cx="70" cy="70" r="58" stroke-dasharray="364" stroke-dashoffset="364"/>
+            </svg>
+            <div class="ring-inner">
+              <div class="ring-val" id="ring-today-val">0</div>
+              <div class="ring-unit" id="ring-today-unit">/ 0 mins</div>
+            </div>
+          </div>
+          <div class="ring-label">⏱ Today's Mission</div>
+        </div>
+        <div class="ring-wrap">
+          <div class="ring-container" id="portion-ring">
+            <svg class="ring-svg" id="ring-topics-svg" width="140" height="140" viewBox="0 0 140 140">
+              <circle class="ring-bg" cx="70" cy="70" r="58"/>
+              <circle class="ring-fill topics" id="ring-topics-fill" cx="70" cy="70" r="58" stroke-dasharray="364" stroke-dashoffset="364"/>
+            </svg>
+            <div class="ring-inner">
+              <div class="ring-val" id="ring-topics-val">0%</div>
+              <div class="ring-unit">topics done</div>
+            </div>
+          </div>
+          <div class="ring-label">📚 Portion Roadmap</div>
+        </div>
+        <div class="ring-wrap">
+          <div class="ring-container" id="extra-ring">
+            <svg class="ring-svg" id="ring-bonus-svg" width="140" height="140" viewBox="0 0 140 140">
+              <circle class="ring-bg" cx="70" cy="70" r="58"/>
+              <circle class="ring-fill bonus" id="ring-bonus-fill" cx="70" cy="70" r="58" stroke-dasharray="364" stroke-dashoffset="364"/>
+            </svg>
+            <div class="ring-inner">
+              <div class="ring-val" id="ring-bonus-val">0</div>
+              <div class="ring-unit">bonus mins</div>
+            </div>
+          </div>
+          <div class="ring-label">⭐ Extra Effort</div>
+        </div>
+      </div>
+      <div class="nudge-banner" id="nudge-banner">⚡ Exams are coming — time to pick up the speed!</div>
+      <div class="nudge-banner" id="coach-banner" style="background:#e8f5ff;border-color:#80b8f0;color:#1060a0;margin-top:8px;"></div>
+    </div>
+  </div>
+
+  <div class="planner-body">
+    <div class="topics-section">
+      <div class="topics-card">
+        <div class="topics-card-title">📋 Your Study Plan</div>
+        <div id="topics-table"></div>
+      </div>
+    </div>
+    <div class="slots-section">
+      <div class="slots-title">🎯 Study Workbench</div>
+      <button class="add-slot-btn" onclick="addSlot()">＋ Add Study Slot</button>
+      <div id="slots-list"></div>
+    </div>
+  </div>
+
+</div>
+</div>
+
+<!-- STICKER PICKER -->
+<div class="sticker-overlay" id="sticker-overlay">
+  <div class="sticker-box">
+    <div class="sticker-box-title">🎉 Subject Complete!</div>
+    <div class="sticker-box-sub">Pick a sticker to celebrate!</div>
+    <div class="sticker-grid" id="sticker-grid">
+      <span class="sticker-opt" onclick="selectSticker(this,'🏆')">🏆</span>
+      <span class="sticker-opt" onclick="selectSticker(this,'⭐')">⭐</span>
+      <span class="sticker-opt" onclick="selectSticker(this,'🦋')">🦋</span>
+      <span class="sticker-opt" onclick="selectSticker(this,'🌈')">🌈</span>
+      <span class="sticker-opt" onclick="selectSticker(this,'🎯')">🎯</span>
+      <span class="sticker-opt" onclick="selectSticker(this,'🦄')">🦄</span>
+      <span class="sticker-opt" onclick="selectSticker(this,'🌟')">🌟</span>
+      <span class="sticker-opt" onclick="selectSticker(this,'🎀')">🎀</span>
+      <span class="sticker-opt" onclick="selectSticker(this,'🔥')">🔥</span>
+      <span class="sticker-opt" onclick="selectSticker(this,'💎')">💎</span>
+    </div>
+    <button class="sticker-confirm-btn" onclick="confirmSticker()">Stick it! 🎊</button>
+  </div>
+</div>
+
+<!-- TOAST -->
+<div class="toast-msg" id="toast-msg"></div>
+
+<script src="https://cdn.jsdelivr.net/npm/canvas-confetti@1.9.4/dist/confetti.browser.min.js"></script>
+<script src="js/supabase.js"></script>
+<script src="js/planner.js"></script>
+</body>
+</html>
