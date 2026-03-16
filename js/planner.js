@@ -110,12 +110,22 @@ function daysUntilExam(subj) {
 // Each subject gets its own budget based on its exam date.
 // prepMins per topic = subjectBudget / topicCountInSubject * difficultyWeight (normalised within subject)
 function calcTopicPrepMins(subj) {
-  const budget = calcSubjectBudgetMins(subj);
+  const totalBudget = calcTotalBudgetMins();
   const topics = subj.topics || [];
   if (!topics.length) return 0;
-  const w = diffWeight(subj.difficulty);
-  // All topics in a subject share the same difficulty, so split evenly
-  return Math.max(5, Math.round((budget * w) / topics.length));
+
+  // Total weighted topic count across ALL subjects
+  const totalWeightedTopics = (plan.subjects || []).reduce((sum, s) => {
+    return sum + (s.topics || []).length * diffWeight(s.difficulty);
+  }, 0);
+  if (!totalWeightedTopics) return 0;
+
+  // This subject's share = its weighted topics / total weighted topics
+  const subjWeight = topics.length * diffWeight(subj.difficulty);
+  const subjBudget = (subjWeight / totalWeightedTopics) * totalBudget;
+
+  // Split evenly across this subject's topics (difficulty already applied at subject level)
+  return Math.max(5, Math.round(subjBudget / topics.length));
 }
 
 function initTopicMeta() {
