@@ -3,6 +3,7 @@ let subjects     = [];
 let currentUserId  = null;
 let currentPasteId = null;
 let dbLoaded = false;   // single guard: never save before DB has loaded
+let booting  = false;   // prevents double auth fire running boot twice
 
 const PRESETS = [
   { name:'Maths',           emoji:'🔢' },
@@ -242,8 +243,9 @@ sb.auth.onAuthStateChange((event, session) => {
     return;
   }
 
-  if (dbLoaded && currentUserId === session.user.id) return;
+  if (booting || (dbLoaded && currentUserId === session.user.id)) return;
 
+  booting = true;
   dbLoaded = false;
   currentUserId = session.user.id;
 
@@ -288,6 +290,7 @@ async function boot(session) {
   document.getElementById('app-screen').style.display = 'block';
   renderSubjects();
   dbLoaded = true;
+  booting = false;
   console.log('✅ Boot complete — dbLoaded is now TRUE');
 
   ['study-start','exam-start','exam-end','weekday-hrs','weekend-hrs'].forEach(id => {
