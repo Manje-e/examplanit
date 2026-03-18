@@ -25,7 +25,7 @@ sb.auth.onAuthStateChange((event, session) => {
 
 async function loadPlan() {
   const data = await dbLoad(currentUserId);
-  if (!data || !data.subjects?.length) { sessionStorage.setItem('replan', '1'); window.location.href = 'index.html'; return; }
+  if (!data || !data.subjects?.length) { localStorage.setItem('replan', '1'); window.location.href = 'index.html'; return; }
   plan = data;
 
   if (data.topic_meta && Object.keys(data.topic_meta).length > 0) {
@@ -164,19 +164,30 @@ function ensureAllTopicsMeta() {
 // Per subject: remaining = subjectBudget - spentMins across that subject's topics
 // Redistribute remaining across unfinished topics in that subject
 function recalibrate() {
+  // Use same shared budget logic as initTopicMeta
+  // Total budget split across all subjects weighted by difficulty
+  const totalBudget = calcTotalBudgetMins();
+  const totalWeightedTopics = (plan.subjects || []).reduce((sum, s) => {
+    return sum + (s.topics || []).length * diffWeight(s.difficulty);
+  }, 0);
+  if (!totalWeightedTopics) return;
+
   plan.subjects.forEach(s => {
-    const budget = calcSubjectBudgetMins(s);
     const topics = s.topics || [];
     if (!topics.length) return;
 
-    // How much has already been spent on this subject's topics?
+    // This subject's share of total budget
+    const subjWeight = topics.length * diffWeight(s.difficulty);
+    const subjBudget = (subjWeight / totalWeightedTopics) * totalBudget;
+
+    // How much already spent on this subject
     let subjectSpent = 0;
     topics.forEach((t, i) => {
       const meta = topicMeta[`${s.id}_${i}`];
       if (meta) subjectSpent += (meta.spentMins || 0);
     });
 
-    const remaining = Math.max(0, budget - subjectSpent);
+    const remaining = Math.max(0, subjBudget - subjectSpent);
     const unfinished = topics.filter((t, i) => {
       const meta = topicMeta[`${s.id}_${i}`];
       return meta && !meta.prepDone;
@@ -184,8 +195,7 @@ function recalibrate() {
     if (!unfinished.length) return;
 
     const minsPerTopic = Math.max(5, Math.round(remaining / unfinished.length));
-    unfinished.forEach((t, idx) => {
-      // find original index
+    unfinished.forEach(t => {
       const i = topics.indexOf(t);
       const meta = topicMeta[`${s.id}_${i}`];
       if (meta) {
@@ -370,7 +380,11 @@ function togglePrepDone(key, subjId) {
   const meta = topicMeta[key];
   if (!meta) return;
   meta.prepDone = !meta.prepDone;
-  if (!meta.prepDone) meta.revDone = false;
+  if (!meta.prepDone) {
+    meta.revDone = false;
+    // Restore spentMins to 0 so remaining time shows correctly again
+    meta.spentMins = 0;
+  }
   openSubjects.add(subjId);
   if (meta.prepDone) {
     // Credit full prepMins to todayMins and spentMins if not already spent
@@ -815,34 +829,27 @@ function markDone(slotId) {
     slot.pendingMins = 0;
   }
 
-  // Check if whole topic is now done (spent >= allocated)
+  // Yes Done always marks topic complete
   if (meta) {
     const spent = slot.isRev ? (meta.revSpentMins || 0) : (meta.spentMins || 0);
     const alloc = slot.isRev ? meta.revMins : meta.prepMins;
     const overAllocated = !slot.isRev && spent > alloc;
-    const topicFullyDone = spent >= alloc;
-
     if (slot.isRev) {
       meta.revDone = true;
       confettiBomb();
       showToast(randomMsg('revision'));
     } else {
-      if (topicFullyDone) {
-        meta.prepDone = true;
-        confettiBomb();
-        balloonBomb();
-        if (overAllocated) {
-          const subj = plan.subjects.find(s => s.id === subjId);
-          const subjName = subj ? subj.name : 'this subject';
-          setTimeout(() => showToast(`This topic took longer than planned. Hit Recalibrate to adjust remaining ${subjName} topics 🔄`), 2500);
-        } else {
-          showToast(randomMsg('prep'));
-        }
-        checkSubjectComplete(subjId);
+      meta.prepDone = true;
+      confettiBomb();
+      balloonBomb();
+      if (overAllocated) {
+        const subj = plan.subjects.find(s => s.id === subjId);
+        const subjName = subj ? subj.name : 'this subject';
+        setTimeout(() => showToast(`This topic took longer than planned. Hit Recalibrate to adjust remaining ${subjName} topics 🔄`), 2500);
       } else {
-        confettiBomb();
-        showToast('Daily Goal Updated! You\'re 1 step closer to playtime! 🎠');
+        showToast(randomMsg('prep'));
       }
+      checkSubjectComplete(subjId);
     }
     openSubjects.add(subjId);
   }
@@ -955,4 +962,4 @@ function formatMins(mins) {
   return m > 0 ? `${h}h ${m}m` : `${h}h`;
 }
 
-function goReplan() { sessionStorage.setItem('replan', '1'); window.location.href = 'index.html'; }
+function goReplan() { localStorage.setItem('replan', '1'); window.location.href = 'index.html'; }

@@ -268,12 +268,13 @@ async function boot(session) {
   if (data) {
     subjects = data.subjects || [];
     // If plan already built, go straight to planner — unless user clicked Replan
-    const replan = sessionStorage.getItem('replan');
-    sessionStorage.removeItem('replan');
+    const replan = localStorage.getItem('replan');
     if (!replan && subjects.length && data.study_start && data.exam_start) {
       window.location.href = 'planner.html';
       return;
     }
+    // Only remove flag once we know we're staying on Screen 1
+    localStorage.removeItem('replan');
     document.getElementById('study-start').value = data.study_start || today;
     document.getElementById('exam-start').value  = data.exam_start  || '';
     document.getElementById('exam-end').value    = data.exam_end    || '';
