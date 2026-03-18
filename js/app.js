@@ -252,8 +252,9 @@ sb.auth.onAuthStateChange((event, session) => {
 });
 
 async function boot(session) {
+  // Keep screens hidden until we know where to go
   document.getElementById('login-screen').style.display = 'none';
-  document.getElementById('app-screen').style.display = 'block';
+  document.getElementById('app-screen').style.display = 'none';
   document.getElementById('user-name').textContent = session.user.user_metadata?.full_name || session.user.email;
   const av = session.user.user_metadata?.avatar_url;
   if (av) document.getElementById('user-avatar').src = av;
@@ -266,8 +267,10 @@ async function boot(session) {
 
   if (data) {
     subjects = data.subjects || [];
-    // If plan already built, go straight to planner
-    if (subjects.length && data.study_start && data.exam_start) {
+    // If plan already built, go straight to planner — unless user clicked Replan
+    const replan = sessionStorage.getItem('replan');
+    sessionStorage.removeItem('replan');
+    if (!replan && subjects.length && data.study_start && data.exam_start) {
       window.location.href = 'planner.html';
       return;
     }
@@ -280,6 +283,8 @@ async function boot(session) {
     document.getElementById('study-start').value = today;
   }
 
+  // Only now show the app screen — no plan exists, show Screen 1
+  document.getElementById('app-screen').style.display = 'block';
   renderSubjects();
   dbLoaded = true;
   console.log('✅ Boot complete — dbLoaded is now TRUE');

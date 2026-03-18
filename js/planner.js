@@ -25,7 +25,7 @@ sb.auth.onAuthStateChange((event, session) => {
 
 async function loadPlan() {
   const data = await dbLoad(currentUserId);
-  if (!data || !data.subjects?.length) { window.location.href = 'index.html'; return; }
+  if (!data || !data.subjects?.length) { sessionStorage.setItem('replan', '1'); window.location.href = 'index.html'; return; }
   plan = data;
 
   if (data.topic_meta && Object.keys(data.topic_meta).length > 0) {
@@ -759,7 +759,8 @@ function runTimer(slotId) {
     updateTimerDisplay(slotId);
     if (slot.remainingSecs <= 0) {
       clearInterval(slot.timerInterval);
-      logStudyTime(slot, slot.durationMins);
+      // Store pending mins — only log to todayMins when user clicks Yes Done
+      slot.pendingMins = (slot.pendingMins || 0) + slot.durationMins;
       timerDone(slotId);
     }
   }, tick);
@@ -954,4 +955,4 @@ function formatMins(mins) {
   return m > 0 ? `${h}h ${m}m` : `${h}h`;
 }
 
-function goReplan() { window.location.href = 'index.html'; }
+function goReplan() { sessionStorage.setItem('replan', '1'); window.location.href = 'index.html'; }
