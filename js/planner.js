@@ -373,6 +373,14 @@ function togglePrepDone(key, subjId) {
   if (!meta.prepDone) meta.revDone = false;
   openSubjects.add(subjId);
   if (meta.prepDone) {
+    // Credit full prepMins to todayMins and spentMins if not already spent
+    const alreadySpent = meta.spentMins || 0;
+    const remaining = Math.max(0, meta.prepMins - alreadySpent);
+    if (remaining > 0) {
+      meta.spentMins = meta.prepMins;
+      todayMins += remaining;
+      totalSpentMins += remaining;
+    }
     confettiBomb();
     balloonBomb();
     showToast(randomMsg('prep'));
@@ -389,6 +397,14 @@ function toggleRevDone(key, subjId) {
   meta.revDone = !meta.revDone;
   openSubjects.add(subjId);
   if (meta.revDone) {
+    // Credit full revMins to todayMins and revSpentMins if not already spent
+    const alreadySpent = meta.revSpentMins || 0;
+    const remaining = Math.max(0, meta.revMins - alreadySpent);
+    if (remaining > 0) {
+      meta.revSpentMins = meta.revMins;
+      todayMins += remaining;
+      totalSpentMins += remaining;
+    }
     confettiBomb();
     showToast(randomMsg('revision'));
     checkSubjectComplete(subjId);
@@ -774,7 +790,8 @@ function stopTimer(slotId) {
   if (!slot) return;
   clearInterval(slot.timerInterval);
   const secsStudied = (slot.durationMins * 60) - slot.remainingSecs;
-  logStudyTime(slot, Math.max(0, Math.round(secsStudied / 60)));
+  // Store mins on slot — only log to todayMins/meta when user confirms Yes Done
+  slot.pendingMins = (slot.pendingMins || 0) + Math.max(0, Math.round(secsStudied / 60));
   timerDone(slotId);
 }
 
@@ -789,8 +806,13 @@ function markDone(slotId) {
   const meta = topicMeta[slot.topicKey];
   const [subjId] = slot.topicKey.split('_');
 
-  const doneBtn = document.querySelector(`#slot-done-${slotId} .done-yes-btn`);
   document.getElementById(`slot-done-${slotId}`).style.display = 'none';
+
+  // NOW log the pending mins to todayMins and topic meta
+  if (slot.pendingMins) {
+    logStudyTime(slot, slot.pendingMins);
+    slot.pendingMins = 0;
+  }
 
   // Check if whole topic is now done (spent >= allocated)
   if (meta) {

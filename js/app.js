@@ -22,7 +22,11 @@ async function saveAll() {
   if (!currentUserId) { console.warn('saveAll: Not logged in'); return false; }
   if (!dbLoaded)      { console.warn('saveAll: DB not loaded yet — skipping save'); return false; }
 
+  // Load existing data first so we don't wipe topic_meta and other planner fields
+  const existing = await dbLoad(currentUserId) || {};
+
   const payload = {
+    ...existing,
     subjects,
     study_start:   document.getElementById('study-start').value || null,
     exam_start:    document.getElementById('exam-start').value  || null,
@@ -86,6 +90,24 @@ function setDifficulty(id, diff) {
 function setExamDate(id, val) {
   const s = subjects.find(s => s.id === id);
   if (!s) return;
+  if (val) {
+    const today = new Date(); today.setHours(0,0,0,0);
+    const chosen = new Date(val); chosen.setHours(0,0,0,0);
+    if (chosen < today) {
+      alert('⚠️ Exam date cannot be in the past!');
+      // Reset the input visually
+      const input = document.querySelector(`input[onchange*="${id}"]`);
+      if (input) input.value = s.examDate || '';
+      return;
+    }
+    const studyStart = document.getElementById('study-start').value;
+    if (studyStart && val <= studyStart) {
+      alert('⚠️ Exam date must be after your study start date!');
+      const input = document.querySelector(`input[onchange*="${id}"]`);
+      if (input) input.value = s.examDate || '';
+      return;
+    }
+  }
   s.examDate = val;
   saveAll();
 }
@@ -243,7 +265,12 @@ async function boot(session) {
   const today = new Date(Date.now() + 5.5*60*60*1000).toISOString().split('T')[0];
 
   if (data) {
-    subjects     = data.subjects || [];
+    subjects = data.subjects || [];
+    // If plan already built, go straight to planner
+    if (subjects.length && data.study_start && data.exam_start) {
+      window.location.href = 'planner.html';
+      return;
+    }
     document.getElementById('study-start').value = data.study_start || today;
     document.getElementById('exam-start').value  = data.exam_start  || '';
     document.getElementById('exam-end').value    = data.exam_end    || '';

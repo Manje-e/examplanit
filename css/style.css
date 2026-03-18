@@ -159,6 +159,42 @@ body { font-family: 'Nunito', sans-serif; background: #f0eeff; min-height: 100vh
 .modal-save { padding: 8px 20px; background: linear-gradient(135deg, #c8b8f8, #a080d0); border: none; border-radius: 10px; font-family: 'Nunito', sans-serif; font-weight: 800; font-size: 0.78rem; color: #fff; cursor: pointer; }
 
 @media (max-width: 860px) {
-  .subj-item { flex-wrap: wrap; }
-  .si-name-wrap, .diff-group { width: auto; min-width: auto; }
+  .subj-item {
+    flex-wrap: wrap;
+    gap: 10px;
+    padding: 12px 12px;
+  }
+  .si-name-wrap {
+    width: auto; min-width: auto;
+    flex: 1 1 120px;
+  }
+  .diff-group {
+    width: auto; min-width: auto;
+    flex: 1 1 auto;
+    flex-wrap: wrap;
+  }
+  .upload-group {
+    flex: 1 1 100%;
+    flex-wrap: wrap;
+  }
+  .exam-date-wrap {
+    flex: 1 1 100%;
+    margin-left: 0;
+    flex-direction: row;
+    align-items: center;
+    gap: 8px;
+  }
+  .exam-date-input {
+    width: 100%;
+    flex: 1;
+  }
+  .del-btn {
+    margin-left: auto;
+  }
+}
+
+@media (max-width: 480px) {
+  .diff-group { gap: 4px; }
+  .dp { padding: 4px 6px; font-size: 0.58rem; }
+  .up-btn { padding: 5px 8px; font-size: 0.6rem; }
 }
