@@ -158,6 +158,18 @@ body { font-family: 'Nunito', sans-serif; background: #f0eeff; min-height: 100vh
 .modal-cancel { padding: 8px 20px; background: #fff; border: 1.5px solid #e0d8f0; border-radius: 10px; font-family: 'Nunito', sans-serif; font-weight: 800; font-size: 0.78rem; color: #a090c0; cursor: pointer; }
 .modal-save { padding: 8px 20px; background: linear-gradient(135deg, #c8b8f8, #a080d0); border: none; border-radius: 10px; font-family: 'Nunito', sans-serif; font-weight: 800; font-size: 0.78rem; color: #fff; cursor: pointer; }
 
+/* Topic highlighted when in study slot */
+.topic-row.in-slot {
+  border: 2px solid #9060c0;
+  border-radius: 8px;
+  background: #f5f0ff;
+  font-weight: 800;
+}
+.topic-row.in-slot .topic-name {
+  color: #7040a0;
+  font-weight: 800;
+}
+
 @media (max-width: 860px) {
   .subj-item {
     flex-wrap: wrap;

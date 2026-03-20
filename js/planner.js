@@ -48,10 +48,19 @@ async function loadPlan() {
     bonusMins = 0;
   }
 
+  // Restore openSubjects from localStorage
+  const savedOpen = localStorage.getItem('openSubjects');
+  if (savedOpen) {
+    try { JSON.parse(savedOpen).forEach(id => openSubjects.add(id)); } catch(e) {}
+  }
+
   document.getElementById('planner-loading').style.display = 'none';
   document.getElementById('planner-screen').style.display = 'block';
   renderTopicsTable();
   updateDashboard();
+
+  // Restore active slots from localStorage
+  restoreSlotsFromStorage();
 }
 
 // ── TIME BUDGET ──
@@ -373,6 +382,7 @@ function renderTopicsTable() {
 function toggleSubject(subjId) {
   if (openSubjects.has(subjId)) openSubjects.delete(subjId);
   else openSubjects.add(subjId);
+  localStorage.setItem('openSubjects', JSON.stringify([...openSubjects]));
   renderTopicsTable();
 }
 
@@ -382,7 +392,10 @@ function togglePrepDone(key, subjId) {
   meta.prepDone = !meta.prepDone;
   if (!meta.prepDone) {
     meta.revDone = false;
-    // Restore spentMins to 0 so remaining time shows correctly again
+    // Deduct the credited time back from todayMins and totalSpentMins
+    const credited = meta.spentMins || 0;
+    todayMins = Math.max(0, todayMins - credited);
+    totalSpentMins = Math.max(0, totalSpentMins - credited);
     meta.spentMins = 0;
   }
   openSubjects.add(subjId);
@@ -410,6 +423,13 @@ function toggleRevDone(key, subjId) {
   if (!meta) return;
   meta.revDone = !meta.revDone;
   openSubjects.add(subjId);
+  if (!meta.revDone) {
+    // Deduct the credited rev time back
+    const credited = meta.revSpentMins || 0;
+    todayMins = Math.max(0, todayMins - credited);
+    totalSpentMins = Math.max(0, totalSpentMins - credited);
+    meta.revSpentMins = 0;
+  }
   if (meta.revDone) {
     // Credit full revMins to todayMins and revSpentMins if not already spent
     const alreadySpent = meta.revSpentMins || 0;
@@ -677,6 +697,7 @@ function setupSlotDrop(id) {
     const isRev = data.endsWith('|rev');
     const key = isRev ? data.replace('|rev', '') : data;
     loadTopicIntoSlot(id, key, isRev);
+    highlightTopicRow(key, isRev);
   });
 }
 
@@ -696,6 +717,9 @@ function loadTopicIntoSlot(slotId, key, isRev) {
   slot.topicKey = key;
   slot.isRev = isRev;
   slot.allocMins = remaining; // remaining, not total
+
+  // Persist slot to localStorage so it survives refresh
+  saveSlotToStorage(slotId, key, isRev);
 
   document.getElementById(`slot-drop-${slotId}`).style.display = 'none';
   const loaded = document.getElementById(`slot-loaded-${slotId}`);
@@ -937,6 +961,42 @@ function removeSlot(slotId) {
   slots = slots.filter(s => s.id !== slotId);
   const card = document.getElementById(`slot-${slotId}`);
   if (card) card.remove();
+  removeSlotFromStorage(slotId);
+}
+
+// ── SLOT STORAGE ──
+function saveSlotToStorage(slotId, key, isRev) {
+  const stored = JSON.parse(localStorage.getItem('activeSlots') || '[]');
+  const existing = stored.findIndex(s => s.slotId === slotId);
+  const entry = { slotId, key, isRev };
+  if (existing >= 0) stored[existing] = entry;
+  else stored.push(entry);
+  localStorage.setItem('activeSlots', JSON.stringify(stored));
+}
+
+function removeSlotFromStorage(slotId) {
+  const stored = JSON.parse(localStorage.getItem('activeSlots') || '[]');
+  localStorage.setItem('activeSlots', JSON.stringify(stored.filter(s => s.slotId !== slotId)));
+}
+
+function restoreSlotsFromStorage() {
+  const stored = JSON.parse(localStorage.getItem('activeSlots') || '[]');
+  stored.forEach(({ slotId, key, isRev }) => {
+    // Only restore if topic still exists in plan
+    if (!topicMeta[key]) return;
+    addSlot();
+    const newSlot = slots[slots.length - 1];
+    loadTopicIntoSlot(newSlot.id, key, isRev);
+  });
+}
+
+function highlightTopicRow(key, isRev) {
+  // Remove highlight from all rows first
+  document.querySelectorAll('.topic-row.in-slot').forEach(r => r.classList.remove('in-slot'));
+  // Find and highlight the dropped topic row
+  const selector = isRev ? `[data-key="${key}"].revision-row` : `[data-key="${key}"]:not(.revision-row)`;
+  const row = document.querySelector(selector);
+  if (row) row.classList.add('in-slot');
 }
 
 // ── SAVE ──
