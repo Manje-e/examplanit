@@ -160,10 +160,9 @@ body { font-family: 'Nunito', sans-serif; background: #f0eeff; min-height: 100vh
 
 /* Topic highlighted when in study slot */
 .topic-row.in-slot {
-  border: 2px solid #9060c0;
-  border-radius: 8px;
+
   background: #f5f0ff;
-  font-weight: 800;
+
 }
 .topic-row.in-slot .topic-name {
   color: #7040a0;

@@ -241,7 +241,7 @@ function updatePlusBtn(key, inSlot) {
   }
 }
 
-// ── DONE CHECK — unified: topic is fully done only when prep AND revision both done ──
+// ── DONE CHECK — unified: topic fully done = prep AND revision both checked ──
 function isTopicFullyDone(meta) {
   return meta && meta.prepDone && meta.revDone;
 }
@@ -291,12 +291,11 @@ function renderTopicsTable() {
       const meta = topicMeta[`${s.id}_${i}`];
       if (!meta) return;
       subjTotal++;
-      // Subject row % uses unified done check
       if (isTopicFullyDone(meta)) subjDone++;
     });
     const subjPct = subjTotal > 0 ? subjDone / subjTotal : 0;
     const isAmber = shouldNudge && subjDone === 0 && !examPast;
-    const isOpen  = openSubjects.has(s.id) && !examPast;
+    const isOpen  = openSubjects.has(s.id);
     const badge   = subjectBadges[s.id] || '';
     const days = daysUntilExam(s);
 
@@ -318,117 +317,130 @@ function renderTopicsTable() {
       <span class="subj-row-name${examPast ? ' past-name' : ''}">${s.name}${badge ? ' <span class="subj-badge">'+badge+'</span>' : ''}${urgencyBadge}${doneBadge}</span>
       <span class="subj-row-pct">${Math.round(subjPct*100)}%</span>
       <div class="subj-prog-wrap"><div class="subj-prog-bar" style="width:${Math.round(subjPct*100)}%"></div></div>
-      ${!examPast ? '<span class="chevron">▼</span>' : ''}
+      <span class="chevron">▼</span>
     `;
-    if (!examPast) subjectRow.onclick = () => toggleSubject(s.id);
+    // Always clickable — exam-past subjects can be expanded to view topics
+    subjectRow.onclick = () => toggleSubject(s.id);
 
     const topicsList = document.createElement('div');
     topicsList.className = `topics-list${isOpen ? ' open' : ''}`;
     topicsList.id = `topics-${s.id}`;
 
-    if (!examPast) {
-      s.topics.forEach((topic, i) => {
-        const key = `${s.id}_${i}`;
-        const meta = topicMeta[key];
-        if (!meta) return;
+    // Render topics for all subjects — read-only for exam-past
+    s.topics.forEach((topic, i) => {
+      const key = `${s.id}_${i}`;
+      const meta = topicMeta[key];
+      if (!meta) return;
 
-        const isInSlot = key in topicSlotMap;
+      const isInSlot = key in topicSlotMap;
 
-        const row = document.createElement('div');
-        row.className = `topic-row${isAmber && !meta.prepDone ? ' amber-topic' : ''}${isInSlot ? ' in-slot' : ''}`;
-        row.dataset.key = key;
-        row.draggable = !meta.prepDone;
-        if (!meta.prepDone) {
-          row.addEventListener('dragstart', e => {
-            e.dataTransfer.setData('text/plain', key);
+      const row = document.createElement('div');
+      row.className = `topic-row${isAmber && !meta.prepDone ? ' amber-topic' : ''}${isInSlot ? ' in-slot' : ''}`;
+      row.dataset.key = key;
+
+      // Only draggable if active subject and prep not done
+      if (!examPast && !meta.prepDone) {
+        row.draggable = true;
+        row.addEventListener('dragstart', e => {
+          e.dataTransfer.setData('text/plain', key);
+          e.dataTransfer.effectAllowed = 'copy';
+        });
+      }
+
+      const nameEl = document.createElement('span');
+      nameEl.className = `topic-name${meta.prepDone ? ' done-text' : ''}`;
+      nameEl.textContent = topic;
+      nameEl.title = topic;
+
+      const remaining = Math.max(0, meta.prepMins - (meta.spentMins || 0));
+      const timeEl = document.createElement('span');
+      timeEl.className = `topic-time${meta.prepDone ? ' faded' : ''}`;
+      timeEl.textContent = meta.prepDone ? formatMins(meta.prepMins) : formatMins(remaining) + (meta.spentMins > 0 ? ' left' : '');
+
+      const check = document.createElement('div');
+      check.className = `topic-check${meta.prepDone ? ' checked' : ''}`;
+      // Only interactive if active subject
+      if (!examPast) {
+        check.onclick = e => { e.stopPropagation(); togglePrepDone(key, s.id); };
+      }
+
+      row.appendChild(nameEl);
+      row.appendChild(timeEl);
+      row.appendChild(check);
+
+      // + / − button only on active subjects, unfinished prep topics
+      if (!examPast && !meta.prepDone) {
+        const plusBtn = document.createElement('button');
+        plusBtn.className = 'topic-plus-btn' + (isInSlot ? ' minus' : '');
+        plusBtn.id = `plus-btn-${key}`;
+        plusBtn.textContent = isInSlot ? '−' : '+';
+        plusBtn.title = isInSlot ? 'Remove from study slot' : 'Add to study slot';
+        // Fix: check topicSlotMap live at click time, not via stale closure
+        plusBtn.onclick = e => {
+          e.stopPropagation();
+          if (key in topicSlotMap) {
+            removeSlot(topicSlotMap[key]);
+          } else {
+            quickAddToSlot(key);
+          }
+        };
+        row.appendChild(plusBtn);
+      } else if (!examPast) {
+        // Active subject, prep done — show drag handle
+        const handle = document.createElement('span');
+        handle.className = 'topic-drag-handle';
+        handle.textContent = '⠿';
+        row.appendChild(handle);
+      }
+
+      topicsList.appendChild(row);
+
+      // Revision row — only after prep done
+      if (meta.prepDone) {
+        const revKey = key + '|rev';
+        const revInSlot = revKey in topicSlotMap;
+        const revRow = document.createElement('div');
+        revRow.className = `topic-row revision-row${revInSlot ? ' in-slot' : ''}`;
+        revRow.dataset.key = key;
+
+        // Only draggable if active subject
+        if (!examPast && !meta.revDone) {
+          revRow.draggable = true;
+          revRow.addEventListener('dragstart', e => {
+            e.dataTransfer.setData('text/plain', key + '|rev');
             e.dataTransfer.effectAllowed = 'copy';
           });
         }
 
-        const nameEl = document.createElement('span');
-        nameEl.className = `topic-name${meta.prepDone ? ' done-text' : ''}`;
-        nameEl.textContent = topic;
-        nameEl.title = topic;
+        const revName = document.createElement('span');
+        revName.className = `topic-name${meta.revDone ? ' done-text' : ''}`;
+        revName.textContent = `↩ ${topic} (Revision)`;
+        revName.title = `↩ ${topic} (Revision)`;
+        revName.style.color = meta.revDone ? '#bbb' : '#5090c0';
+        revName.style.fontSize = '0.78rem';
 
-        const remaining = Math.max(0, meta.prepMins - (meta.spentMins || 0));
-        const timeEl = document.createElement('span');
-        timeEl.className = `topic-time${meta.prepDone ? ' faded' : ''}`;
-        timeEl.textContent = meta.prepDone ? formatMins(meta.prepMins) : formatMins(remaining) + (meta.spentMins > 0 ? ' left' : '');
+        const revTime = document.createElement('span');
+        revTime.className = `topic-time revision-time${meta.revDone ? ' faded' : ''}`;
+        revTime.textContent = formatMins(meta.revMins);
 
-        const check = document.createElement('div');
-        check.className = `topic-check${meta.prepDone ? ' checked' : ''}`;
-        check.onclick = e => { e.stopPropagation(); togglePrepDone(key, s.id); };
-
-        row.appendChild(nameEl);
-        row.appendChild(timeEl);
-        row.appendChild(check);
-
-        if (!meta.prepDone) {
-          const plusBtn = document.createElement('button');
-          plusBtn.className = 'topic-plus-btn' + (isInSlot ? ' minus' : '');
-          plusBtn.id = `plus-btn-${key}`;
-          plusBtn.textContent = isInSlot ? '−' : '+';
-          plusBtn.title = isInSlot ? 'Remove from study slot' : 'Add to study slot';
-          plusBtn.onclick = e => {
-            e.stopPropagation();
-            if (isInSlot) {
-              removeSlot(topicSlotMap[key]);
-            } else {
-              quickAddToSlot(key);
-            }
-          };
-          row.appendChild(plusBtn);
-        } else {
-          const handle = document.createElement('span');
-          handle.className = 'topic-drag-handle';
-          handle.textContent = '⠿';
-          row.appendChild(handle);
-        }
-
-        topicsList.appendChild(row);
-
-        // Revision row — only after prep done
-        if (meta.prepDone) {
-          const revKey = key + '|rev';
-          const revInSlot = revKey in topicSlotMap;
-          const revRow = document.createElement('div');
-          revRow.className = `topic-row revision-row${revInSlot ? ' in-slot' : ''}`;
-          revRow.dataset.key = key;
-          revRow.draggable = !meta.revDone;
-          if (!meta.revDone) {
-            revRow.addEventListener('dragstart', e => {
-              e.dataTransfer.setData('text/plain', key + '|rev');
-              e.dataTransfer.effectAllowed = 'copy';
-            });
-          }
-
-          const revName = document.createElement('span');
-          revName.className = `topic-name${meta.revDone ? ' done-text' : ''}`;
-          revName.textContent = `↩ ${topic} (Revision)`;
-          revName.title = `↩ ${topic} (Revision)`;
-          revName.style.color = meta.revDone ? '#bbb' : '#5090c0';
-          revName.style.fontSize = '0.78rem';
-
-          const revTime = document.createElement('span');
-          revTime.className = `topic-time revision-time${meta.revDone ? ' faded' : ''}`;
-          revTime.textContent = formatMins(meta.revMins);
-
-          const revCheck = document.createElement('div');
-          revCheck.className = `topic-check rev-check${meta.revDone ? ' checked' : ''}`;
+        const revCheck = document.createElement('div');
+        revCheck.className = `topic-check rev-check${meta.revDone ? ' checked' : ''}`;
+        // Only interactive if active subject
+        if (!examPast) {
           revCheck.onclick = e => { e.stopPropagation(); toggleRevDone(key, s.id); };
-
-          const revHandle = document.createElement('span');
-          revHandle.className = 'topic-drag-handle';
-          revHandle.textContent = '⠿';
-
-          revRow.appendChild(revName);
-          revRow.appendChild(revTime);
-          revRow.appendChild(revCheck);
-          revRow.appendChild(revHandle);
-          topicsList.appendChild(revRow);
         }
-      });
-    }
+
+        const revHandle = document.createElement('span');
+        revHandle.className = 'topic-drag-handle';
+        revHandle.textContent = '⠿';
+
+        revRow.appendChild(revName);
+        revRow.appendChild(revTime);
+        revRow.appendChild(revCheck);
+        revRow.appendChild(revHandle);
+        topicsList.appendChild(revRow);
+      }
+    });
 
     group.appendChild(subjectRow);
     group.appendChild(topicsList);
@@ -476,7 +488,6 @@ function togglePrepDone(key, subjId) {
     }
     confettiBomb();
     showToast(randomMsg('prep'));
-    // No sticker check here — only check after revision done too
   }
   renderTopicsTable();
   updateDashboard();
@@ -505,7 +516,6 @@ function toggleRevDone(key, subjId) {
     confettiBomb();
     balloonBomb();
     showToast(randomMsg('revision'));
-    // Check subject complete only after revision done
     checkSubjectComplete(subjId);
   }
   renderTopicsTable();
@@ -571,8 +581,8 @@ function fireStickerBurst(emoji) {
 }
 
 // ── DASHBOARD ──
-// Topic fully done = prep + revision both checked
-// Exam-past subjects = all their topics count as fully done regardless
+// Exam-past subjects: all topics count as fully done
+// Active subjects: topic done only when both prep AND revision checked
 function calcTopicsDonePct() {
   let total = 0, done = 0;
   plan.subjects.forEach(s => {
@@ -622,7 +632,6 @@ function toggleSpeedMode() {
 function playBellAlarm() {
   try {
     const ctx = new (window.AudioContext || window.webkitAudioContext)();
-    // Play 3 bell tones spaced 0.7s apart
     [0, 0.7, 1.4].forEach(offset => {
       const osc = ctx.createOscillator();
       const gain = ctx.createGain();
@@ -946,7 +955,6 @@ function markDone(slotId) {
       } else {
         showToast(randomMsg('prep'));
       }
-      // No sticker check here — wait for revision too
     }
     openSubjects.add(subjId);
   }
