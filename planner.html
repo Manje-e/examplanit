@@ -13,7 +13,8 @@
 .planner-card {
   background: #fff; border-radius: 24px;
   box-shadow: 0 8px 32px rgba(0,0,0,0.10);
-  max-width: 1200px; margin: 0 auto; overflow: hidden;
+  max-width: 1200px; margin: 0 auto;
+  /* NO overflow:hidden here — it breaks position:sticky on slots panel */
 }
 
 /* HEADER */
@@ -121,14 +122,17 @@
 .topic-row.amber-topic { background: #fffbf0; }
 .topic-row.revision-row { background: #eef6ff; border-left: 3px solid #a0c8f0; }
 .topic-row.revision-row:hover { background: #e4f0ff; }
+.topic-row.in-slot { background: #f5f0ff; outline: 2px solid #9060c0; outline-offset: -2px; border-radius: 4px; }
 
-/* 2-line clamp on topic names */
+/* 2-line clamp */
 .topic-name {
   font-family: 'Nunito', sans-serif; font-size: 0.82rem; font-weight: 600; color: #666;
   display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical;
   overflow: hidden; min-width: 0;
 }
 .topic-name.done-text { text-decoration: line-through; color: #bbb; }
+.topic-row.in-slot .topic-name { color: #7040a0; font-weight: 800; }
+
 .topic-time {
   font-family: 'Nunito', sans-serif; font-size: 0.72rem; font-weight: 700;
   color: #9070b0; background: #f0eaff; padding: 2px 8px;
@@ -147,15 +151,25 @@
 .topic-check.rev-check.checked { background: #5090c0; border-color: #5090c0; }
 .topic-drag-handle { color: #d0c8e8; font-size: 0.9rem; cursor: grab; user-select: none; flex-shrink: 0; }
 
-.topic-row.in-slot { border: 2px solid #9060c0; border-radius: 8px; background: #f5f0ff; }
-.topic-row.in-slot .topic-name { color: #7040a0; font-weight: 800; }
+/* + button on topic rows */
+.topic-plus-btn {
+  width: 22px; height: 22px; border-radius: 50%;
+  background: #a080d0; border: none; color: #fff;
+  font-size: 1rem; font-weight: 800; cursor: pointer;
+  display: flex; align-items: center; justify-content: center;
+  flex-shrink: 0; line-height: 1; padding: 0;
+  transition: background 0.15s, transform 0.15s;
+}
+.topic-plus-btn:hover { background: #8060b0; transform: scale(1.15); }
+.topic-plus-btn:active { transform: scale(0.95); }
 
-/* SLOTS */
+/* SLOTS — sticky right panel */
 .slots-section {
   padding: 16px 14px;
   position: sticky; top: 24px;
   max-height: calc(100vh - 48px);
   overflow-y: auto; min-width: 0;
+  /* sticky works because planner-card no longer has overflow:hidden */
 }
 .slots-title { font-family: 'Baloo 2', cursive; font-size: 0.88rem; color: #9070b0; margin-bottom: 10px; }
 .add-slot-btn {
@@ -309,6 +323,7 @@
   .topic-time { font-size: 0.6rem; padding: 1px 5px; }
   .topic-check { width: 16px; height: 16px; }
   .topic-drag-handle { font-size: 0.75rem; }
+  .topic-plus-btn { width: 18px; height: 18px; font-size: 0.85rem; }
 
   .slots-title { font-size: 0.72rem; margin-bottom: 6px; }
   .add-slot-btn { font-size: 0.65rem; padding: 8px 4px; }

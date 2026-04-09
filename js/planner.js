@@ -1,10 +1,10 @@
 // ── STATE ──
 let plan = null;
-let topicMeta = {};       // { key: { prepMins, revMins, prepDone, revDone, spentMins, revSpentMins } }
-let subjectBadges = {};   // { subjId: '🏆' }
+let topicMeta = {};
+let subjectBadges = {};
 let todayMins = 0;
 let bonusMins = 0;
-let totalSpentMins = 0;   // total mins spent across ALL sessions (for recalibrate)
+let totalSpentMins = 0;
 let slots = [];
 let slotCounter = 0;
 let currentUserId = null;
@@ -13,7 +13,11 @@ let pendingStickerSubjId = null;
 let pendingStickerEl = null;
 let selectedStickerEmoji = null;
 
-const CIRCUMFERENCE = 364; // 2 * PI * 58
+// Track which topicKey is loaded in which slotId
+// { topicKey: slotId } — so we can clear highlight when slot is removed
+let topicSlotMap = {};
+
+const CIRCUMFERENCE = 364;
 
 // ── BOOT ──
 sb.auth.onAuthStateChange((event, session) => {
@@ -40,7 +44,6 @@ async function loadPlan() {
   totalSpentMins = data.total_spent_mins || 0;
   subjectBadges = data.subject_badges || {};
 
-  // Reset today_mins if last session was a different day
   const today = new Date().toDateString();
   const lastSaved = data.last_saved_date || '';
   if (lastSaved !== today) {
@@ -48,7 +51,6 @@ async function loadPlan() {
     bonusMins = 0;
   }
 
-  // Restore openSubjects from localStorage
   const savedOpen = localStorage.getItem('openSubjects');
   if (savedOpen) {
     try { JSON.parse(savedOpen).forEach(id => openSubjects.add(id)); } catch(e) {}
@@ -58,13 +60,10 @@ async function loadPlan() {
   document.getElementById('planner-screen').style.display = 'block';
   renderTopicsTable();
   updateDashboard();
-
-  // Restore active slots from localStorage
   restoreSlotsFromStorage();
 }
 
 // ── TIME BUDGET ──
-
 function calcBudgetBetween(startStr, endStr) {
   if (!startStr || !endStr) return 0;
   let wd = 0, we = 0;
@@ -103,7 +102,6 @@ function diffWeight(diff) {
   return 1.5;
 }
 
-// Days until a subject's exam (for urgency coaching)
 function daysUntilExam(subj) {
   const examDate = subj.examDate || plan.exam_start;
   if (!examDate) return null;
@@ -112,14 +110,12 @@ function daysUntilExam(subj) {
   return Math.ceil((exam - today) / 86400000);
 }
 
-// Is a subject's exam already past? Uses examDate if set, else exam_end
 function isExamPast(subj) {
   const today = new Date(); today.setHours(0,0,0,0);
   if (subj.examDate) {
     const exam = new Date(subj.examDate); exam.setHours(0,0,0,0);
     return today > exam;
   }
-  // No individual exam date — gray out only after global exam_end
   if (plan.exam_end) {
     const end = new Date(plan.exam_end); end.setHours(0,0,0,0);
     return today > end;
@@ -132,15 +128,12 @@ function calcTopicPrepMins(subj) {
   const totalBudget = calcTotalBudgetMins();
   const topics = subj.topics || [];
   if (!topics.length) return 0;
-
   const totalWeightedTopics = (plan.subjects || []).reduce((sum, s) => {
     return sum + (s.topics || []).length * diffWeight(s.difficulty);
   }, 0);
   if (!totalWeightedTopics) return 0;
-
   const subjWeight = topics.length * diffWeight(subj.difficulty);
   const subjBudget = (subjWeight / totalWeightedTopics) * totalBudget;
-
   return Math.max(5, Math.round(subjBudget / topics.length));
 }
 
@@ -151,8 +144,7 @@ function initTopicMeta() {
       const key = `${s.id}_${i}`;
       if (!topicMeta[key]) {
         topicMeta[key] = {
-          prepMins,
-          revMins: Math.max(5, Math.round(prepMins * 0.25)),
+          prepMins, revMins: Math.max(5, Math.round(prepMins * 0.25)),
           prepDone: false, revDone: false, spentMins: 0, revSpentMins: 0
         };
       }
@@ -167,8 +159,7 @@ function ensureAllTopicsMeta() {
       const key = `${s.id}_${i}`;
       if (!topicMeta[key]) {
         topicMeta[key] = {
-          prepMins,
-          revMins: Math.max(5, Math.round(prepMins * 0.25)),
+          prepMins, revMins: Math.max(5, Math.round(prepMins * 0.25)),
           prepDone: false, revDone: false, spentMins: 0, revSpentMins: 0
         };
       }
@@ -187,23 +178,19 @@ function recalibrate() {
   plan.subjects.forEach(s => {
     const topics = s.topics || [];
     if (!topics.length) return;
-
     const subjWeight = topics.length * diffWeight(s.difficulty);
     const subjBudget = (subjWeight / totalWeightedTopics) * totalBudget;
-
     let subjectSpent = 0;
     topics.forEach((t, i) => {
       const meta = topicMeta[`${s.id}_${i}`];
       if (meta) subjectSpent += (meta.spentMins || 0);
     });
-
     const remaining = Math.max(0, subjBudget - subjectSpent);
     const unfinished = topics.filter((t, i) => {
       const meta = topicMeta[`${s.id}_${i}`];
       return meta && !meta.prepDone;
     });
     if (!unfinished.length) return;
-
     const minsPerTopic = Math.max(5, Math.round(remaining / unfinished.length));
     unfinished.forEach(t => {
       const i = topics.indexOf(t);
@@ -219,6 +206,25 @@ function recalibrate() {
   updateDashboard();
   savePlannerState();
   showToast('Plan recalibrated! 🔄');
+}
+
+// ── HIGHLIGHT HELPERS ──
+// Add highlight to a specific topic row without clearing others
+function addTopicHighlight(key, isRev) {
+  const selector = isRev
+    ? `[data-key="${key}"].revision-row`
+    : `[data-key="${key}"]:not(.revision-row)`;
+  const row = document.querySelector(selector);
+  if (row) row.classList.add('in-slot');
+}
+
+// Clear highlight for a specific topic key
+function clearTopicHighlight(key, isRev) {
+  const selector = isRev
+    ? `[data-key="${key}"].revision-row`
+    : `[data-key="${key}"]:not(.revision-row)`;
+  const row = document.querySelector(selector);
+  if (row) row.classList.remove('in-slot');
 }
 
 // ── RENDER ──
@@ -238,7 +244,6 @@ function renderTopicsTable() {
   }
   document.getElementById('nudge-banner').style.display = shouldNudge ? 'block' : 'none';
 
-  // Coach banner — find most urgent subject that is NOT past
   const coachBanner = document.getElementById('coach-banner');
   if (coachBanner) {
     const urgent = plan.subjects
@@ -262,7 +267,6 @@ function renderTopicsTable() {
     if (!s.topics?.length) return;
 
     const examPast = isExamPast(s);
-
     let subjTotal = 0, subjDone = 0;
     s.topics.forEach((t, i) => {
       const meta = topicMeta[`${s.id}_${i}`];
@@ -276,12 +280,9 @@ function renderTopicsTable() {
     const badge   = subjectBadges[s.id] || '';
     const days = daysUntilExam(s);
 
-    // Urgency badge — only if not past
     const urgencyBadge = !examPast && days !== null && days <= 7 && days >= 0
       ? ` <span style="font-size:0.62rem;background:#fff0e0;color:#c06000;border:1px solid #f0c080;border-radius:8px;padding:1px 6px;font-weight:800;">🔥 ${days === 0 ? 'Today!' : days === 1 ? 'Tomorrow!' : `${days}d left`}</span>`
       : '';
-
-    // Exam done badge
     const doneBadge = examPast
       ? ` <span style="font-size:0.62rem;background:#e8f5e8;color:#408040;border:1px solid #a0d0a0;border-radius:8px;padding:1px 6px;font-weight:800;">✅ Exam done</span>`
       : '';
@@ -299,26 +300,21 @@ function renderTopicsTable() {
       <div class="subj-prog-wrap"><div class="subj-prog-bar" style="width:${Math.round(subjPct*100)}%"></div></div>
       ${!examPast ? '<span class="chevron">▼</span>' : ''}
     `;
-
-    // Only make clickable if not past
-    if (!examPast) {
-      subjectRow.onclick = () => toggleSubject(s.id);
-    }
+    if (!examPast) subjectRow.onclick = () => toggleSubject(s.id);
 
     const topicsList = document.createElement('div');
     topicsList.className = `topics-list${isOpen ? ' open' : ''}`;
     topicsList.id = `topics-${s.id}`;
 
-    // Don't render topic rows for past subjects
     if (!examPast) {
       s.topics.forEach((topic, i) => {
         const key = `${s.id}_${i}`;
         const meta = topicMeta[key];
         if (!meta) return;
 
-        // Prep row
         const row = document.createElement('div');
-        row.className = `topic-row${isAmber && !meta.prepDone ? ' amber-topic' : ''}`;
+        const isInSlot = Object.keys(topicSlotMap).includes(key);
+        row.className = `topic-row${isAmber && !meta.prepDone ? ' amber-topic' : ''}${isInSlot ? ' in-slot' : ''}`;
         row.dataset.key = key;
         row.draggable = !meta.prepDone;
         if (!meta.prepDone) {
@@ -329,9 +325,9 @@ function renderTopicsTable() {
         }
 
         const nameEl = document.createElement('span');
-        nameEl.className = `topic-name${meta.prepDone ? ' done-text' : ''}`;
+        nameEl.className = `topic-name${meta.prepDone ? ' done-text' : ''}${isInSlot ? ' in-slot-name' : ''}`;
         nameEl.textContent = topic;
-        nameEl.title = topic; // tooltip for truncated names
+        nameEl.title = topic;
 
         const remaining = Math.max(0, meta.prepMins - (meta.spentMins || 0));
         const timeEl = document.createElement('span');
@@ -342,20 +338,37 @@ function renderTopicsTable() {
         check.className = `topic-check${meta.prepDone ? ' checked' : ''}`;
         check.onclick = e => { e.stopPropagation(); togglePrepDone(key, s.id); };
 
-        const handle = document.createElement('span');
-        handle.className = 'topic-drag-handle';
-        handle.textContent = '⠿';
+        // + button — only on unfinished prep topics
+        if (!meta.prepDone) {
+          const plusBtn = document.createElement('button');
+          plusBtn.className = 'topic-plus-btn';
+          plusBtn.textContent = '+';
+          plusBtn.title = 'Add to study slot';
+          plusBtn.onclick = e => {
+            e.stopPropagation();
+            quickAddToSlot(key);
+          };
+          row.appendChild(nameEl);
+          row.appendChild(timeEl);
+          row.appendChild(check);
+          row.appendChild(plusBtn);
+        } else {
+          const handle = document.createElement('span');
+          handle.className = 'topic-drag-handle';
+          handle.textContent = '⠿';
+          row.appendChild(nameEl);
+          row.appendChild(timeEl);
+          row.appendChild(check);
+          row.appendChild(handle);
+        }
 
-        row.appendChild(nameEl);
-        row.appendChild(timeEl);
-        row.appendChild(check);
-        row.appendChild(handle);
         topicsList.appendChild(row);
 
-        // Revision row — only after prep done
+        // Revision row
         if (meta.prepDone) {
           const revRow = document.createElement('div');
-          revRow.className = 'topic-row revision-row';
+          const revInSlot = Object.keys(topicSlotMap).includes(key + '|rev');
+          revRow.className = `topic-row revision-row${revInSlot ? ' in-slot' : ''}`;
           revRow.dataset.key = key;
           revRow.draggable = !meta.revDone;
           if (!meta.revDone) {
@@ -397,6 +410,19 @@ function renderTopicsTable() {
     group.appendChild(topicsList);
     container.appendChild(group);
   });
+}
+
+// ── QUICK ADD TO SLOT via + button ──
+function quickAddToSlot(key) {
+  // Always create a new slot
+  addSlot();
+  const newSlot = slots[slots.length - 1];
+  loadTopicIntoSlot(newSlot.id, key, false);
+  // Highlight the topic row
+  addTopicHighlight(key, false);
+  // Track in map
+  topicSlotMap[key] = newSlot.id;
+  showToast('✓ Added to study slot!');
 }
 
 function toggleSubject(subjId) {
@@ -500,22 +526,19 @@ function fireStickerBurst(emoji) {
   for (let i = 0; i < 18; i++) {
     setTimeout(() => {
       const el = document.createElement('div');
-      el.style.cssText = `
-        position:fixed; pointer-events:none; z-index:9996;
-        font-size:2.5rem; left:${10 + Math.random() * 80}vw; top:${10 + Math.random() * 70}vh;
-      `;
+      el.style.cssText = `position:fixed;pointer-events:none;z-index:9996;font-size:2.5rem;left:${10+Math.random()*80}vw;top:${10+Math.random()*70}vh;`;
       el.textContent = emoji;
       document.body.appendChild(el);
-      const rot = (Math.random() * 60 - 30);
-      const dur = 1200 + Math.random() * 1200;
+      const rot = (Math.random()*60-30);
+      const dur = 1200+Math.random()*1200;
       el.animate([
-        { opacity: 0, transform: `scale(0) rotate(${rot}deg)` },
-        { opacity: 1, transform: `scale(1.3) rotate(${rot}deg)`, offset: 0.3 },
-        { opacity: 1, transform: `scale(1) rotate(${rot}deg)`, offset: 0.7 },
-        { opacity: 0, transform: `scale(0.5) rotate(${rot}deg)` }
-      ], { duration: dur, easing: 'ease-out' });
-      setTimeout(() => el.remove(), dur + 100);
-    }, i * 80);
+        {opacity:0,transform:`scale(0) rotate(${rot}deg)`},
+        {opacity:1,transform:`scale(1.3) rotate(${rot}deg)`,offset:0.3},
+        {opacity:1,transform:`scale(1) rotate(${rot}deg)`,offset:0.7},
+        {opacity:0,transform:`scale(0.5) rotate(${rot}deg)`}
+      ],{duration:dur,easing:'ease-out'});
+      setTimeout(()=>el.remove(),dur+100);
+    },i*80);
   }
 }
 
@@ -528,8 +551,6 @@ function calcTopicsDonePct() {
 
 function updateDashboard() {
   const todayBudget = calcTodayBudgetMins();
-  const totalBudget = calcTotalBudgetMins();
-
   const todayPct = todayBudget > 0 ? Math.min(1, todayMins / todayBudget) : 0;
   setRing('ring-today-fill', todayPct, 364);
   document.getElementById('ring-today-val').textContent = todayMins;
@@ -549,7 +570,7 @@ function setRing(id, pct, circ) {
   if (el) el.style.strokeDashoffset = circ * (1 - Math.max(0, Math.min(1, pct)));
 }
 
-// ── SPEED MODE (for testing) ──
+// ── SPEED MODE ──
 let speedMode = false;
 function toggleSpeedMode() {
   speedMode = !speedMode;
@@ -559,49 +580,36 @@ function toggleSpeedMode() {
   btn.style.color = speedMode ? '#a07000' : '';
 }
 
-// ── ANIMATIONS via canvas-confetti ──
+// ── ANIMATIONS ──
 function confettiBomb() {
   const count = 120;
-  confetti({ particleCount: count/2, angle: 60, spread: 70, origin: { x: 0, y: 0.6 }, colors: ['#c8b8f8','#f9c74f','#ff6b9d','#43aa8b','#f94144'] });
-  confetti({ particleCount: count/2, angle: 120, spread: 70, origin: { x: 1, y: 0.6 }, colors: ['#c8b8f8','#f9c74f','#ff6b9d','#43aa8b','#f94144'] });
+  confetti({particleCount:count/2,angle:60,spread:70,origin:{x:0,y:0.6},colors:['#c8b8f8','#f9c74f','#ff6b9d','#43aa8b','#f94144']});
+  confetti({particleCount:count/2,angle:120,spread:70,origin:{x:1,y:0.6},colors:['#c8b8f8','#f9c74f','#ff6b9d','#43aa8b','#f94144']});
 }
 
 function balloonBomb() {
   const duration = 2000;
   const end = Date.now() + duration;
   (function frame() {
-    confetti({ particleCount: 6, angle: 60, spread: 55, origin: { x: 0, y: 0.7 }, colors: ['#ff6b9d','#f9c74f','#c8b8f8'] });
-    confetti({ particleCount: 6, angle: 120, spread: 55, origin: { x: 1, y: 0.7 }, colors: ['#43aa8b','#f94144','#c8b8f8'] });
+    confetti({particleCount:6,angle:60,spread:55,origin:{x:0,y:0.7},colors:['#ff6b9d','#f9c74f','#c8b8f8']});
+    confetti({particleCount:6,angle:120,spread:55,origin:{x:1,y:0.7},colors:['#43aa8b','#f94144','#c8b8f8']});
     if (Date.now() < end) requestAnimationFrame(frame);
   })();
-  confetti({ particleCount: 30, spread: 120, origin: { x: 0.5, y: 0.5 },
-    shapes: ['circle'], colors: ['#ff6b9d','#f9c74f','#43aa8b','#c8b8f8','#f94144'],
-    scalar: 2, ticks: 300
-  });
+  confetti({particleCount:30,spread:120,origin:{x:0.5,y:0.5},shapes:['circle'],colors:['#ff6b9d','#f9c74f','#43aa8b','#c8b8f8','#f94144'],scalar:2,ticks:300});
 }
 
 function muscleExplosion() {
-  const starDefaults = {
-    spread: 360, ticks: 80, gravity: 0, decay: 0.94, startVelocity: 28,
-    colors: ['#FFE400', '#FFBD00', '#E89400', '#FFCA6C', '#FDFFB8'],
-  };
+  const starDefaults = {spread:360,ticks:80,gravity:0,decay:0.94,startVelocity:28,colors:['#FFE400','#FFBD00','#E89400','#FFCA6C','#FDFFB8']};
   const shoot = () => {
-    confetti({ ...starDefaults, particleCount: 50, scalar: 1.3, shapes: ['star'] });
-    confetti({ ...starDefaults, particleCount: 15, scalar: 0.7, shapes: ['circle'] });
+    confetti({...starDefaults,particleCount:50,scalar:1.3,shapes:['star']});
+    confetti({...starDefaults,particleCount:15,scalar:0.7,shapes:['circle']});
   };
-  shoot();
-  setTimeout(shoot, 120);
-  setTimeout(shoot, 240);
-
+  shoot(); setTimeout(shoot,120); setTimeout(shoot,240);
   const scalar = 2;
-  const muscle = confetti.shapeFromText({ text: '💪', scalar });
-  setTimeout(() => {
-    confetti({
-      shapes: [muscle], scalar, spread: 80, particleCount: 20,
-      origin: { x: 0.5, y: 0.6 }, startVelocity: 20,
-      ticks: 100, gravity: 0.5, decay: 0.95,
-    });
-  }, 200);
+  const muscle = confetti.shapeFromText({text:'💪',scalar});
+  setTimeout(()=>{
+    confetti({shapes:[muscle],scalar,spread:80,particleCount:20,origin:{x:0.5,y:0.6},startVelocity:20,ticks:100,gravity:0.5,decay:0.95});
+  },200);
 }
 
 function activateBonusStardust() { muscleExplosion(); }
@@ -615,23 +623,23 @@ function showToast(msg) {
   el.textContent = msg;
   el.classList.add('show');
   clearTimeout(toastTimeout);
-  toastTimeout = setTimeout(() => el.classList.remove('show'), 3000);
+  toastTimeout = setTimeout(() => el.classList.remove('show'), 2500);
 }
 
 function randomMsg(type) {
   const msgs = {
-    prep: ['Mission Accomplished! You\'re on fire! 🔥', 'Level Up! Brain power +10! 💪', 'Nailed it! 🎯', 'Keep going, superstar! 🌟'],
-    revision: ['Memory Locked! 🔒', 'Revision Master! Making it look easy. ✨', 'Double done! 💪', 'Sharp as a tack! 🧠'],
-    bonus: ['Bonus Power earned! 🏆', 'Unstoppable energy! ⚡', 'Going above and beyond! 🚀', 'Extra effort = extra awesome! 🌟'],
+    prep: ['Mission Accomplished! You\'re on fire! 🔥','Level Up! Brain power +10! 💪','Nailed it! 🎯','Keep going, superstar! 🌟'],
+    revision: ['Memory Locked! 🔒','Revision Master! Making it look easy. ✨','Double done! 💪','Sharp as a tack! 🧠'],
+    bonus: ['Bonus Power earned! 🏆','Unstoppable energy! ⚡','Going above and beyond! 🚀','Extra effort = extra awesome! 🌟'],
   };
   const list = msgs[type] || msgs.prep;
-  return list[Math.floor(Math.random() * list.length)];
+  return list[Math.floor(Math.random()*list.length)];
 }
 
 // ── SLOTS ──
 function addSlot() {
   const id = ++slotCounter;
-  slots.push({ id, topicKey: null, isRev: false, durationMins: 0, allocMins: 0, selectedMoreMins: 0, effortType: null, timerInterval: null, remainingSecs: 0, paused: false });
+  slots.push({id,topicKey:null,isRev:false,durationMins:0,allocMins:0,selectedMoreMins:0,effortType:null,timerInterval:null,remainingSecs:0,paused:false});
 
   const card = document.createElement('div');
   card.className = 'slot-card';
@@ -699,9 +707,13 @@ function setupSlotDrop(id) {
     card.classList.remove('drag-over');
     const data = e.dataTransfer.getData('text/plain');
     const isRev = data.endsWith('|rev');
-    const key = isRev ? data.replace('|rev', '') : data;
+    const key = isRev ? data.replace('|rev','') : data;
     loadTopicIntoSlot(id, key, isRev);
-    highlightTopicRow(key, isRev);
+    // Add highlight without clearing others
+    addTopicHighlight(key, isRev);
+    // Track in map
+    const mapKey = isRev ? key + '|rev' : key;
+    topicSlotMap[mapKey] = id;
   });
 }
 
@@ -715,7 +727,7 @@ function loadTopicIntoSlot(slotId, key, isRev) {
   const subj = plan.subjects.find(s => s.id === subjId);
   const topicName = subj?.topics?.[parseInt(topicIdx)] || 'Topic';
   const allocMins = isRev ? meta.revMins : meta.prepMins;
-  const spentSoFar = isRev ? (meta.revSpentMins || 0) : (meta.spentMins || 0);
+  const spentSoFar = isRev ? (meta.revSpentMins||0) : (meta.spentMins||0);
   const remaining = Math.max(5, allocMins - spentSoFar);
 
   slot.topicKey = key;
@@ -730,7 +742,7 @@ function loadTopicIntoSlot(slotId, key, isRev) {
   document.getElementById(`slot-tname-${slotId}`).textContent = isRev ? `↩ ${topicName} (Revision)` : topicName;
   document.getElementById(`slot-tmeta-${slotId}`).textContent = `${subj?.emoji||''} ${subj?.name||''} · ${formatMins(remaining)} left`;
 
-  const pct = allocMins > 0 ? Math.round(spentSoFar / allocMins * 100) : 0;
+  const pct = allocMins > 0 ? Math.round(spentSoFar/allocMins*100) : 0;
   const prog = document.getElementById(`slot-prog-${slotId}`);
   if (prog) prog.style.width = pct + '%';
 
@@ -741,7 +753,7 @@ function loadTopicIntoSlot(slotId, key, isRev) {
   } else {
     const btns = document.getElementById(`slot-dur-btns-${slotId}`);
     btns.innerHTML = '';
-    [20, 30, 45, 60].forEach(m => {
+    [20,30,45,60].forEach(m => {
       const b = document.createElement('button');
       b.className = 'dur-btn' + (m > remaining ? ' disabled-dur' : '');
       b.textContent = m + 'm';
@@ -799,7 +811,7 @@ function runTimer(slotId) {
     updateTimerDisplay(slotId);
     if (slot.remainingSecs <= 0) {
       clearInterval(slot.timerInterval);
-      slot.pendingMins = (slot.pendingMins || 0) + slot.durationMins;
+      slot.pendingMins = (slot.pendingMins||0) + slot.durationMins;
       timerDone(slotId);
     }
   }, tick);
@@ -808,12 +820,12 @@ function runTimer(slotId) {
 function updateTimerDisplay(slotId) {
   const slot = slots.find(s => s.id === slotId);
   if (!slot) return;
-  const m = Math.floor(slot.remainingSecs / 60);
-  const s = slot.remainingSecs % 60;
+  const m = Math.floor(slot.remainingSecs/60);
+  const s = slot.remainingSecs%60;
   const el = document.getElementById(`slot-time-${slotId}`);
   if (el) {
     el.textContent = `${String(m).padStart(2,'0')}:${String(s).padStart(2,'0')}`;
-    el.className = `timer-display${slot.remainingSecs <= 60 ? ' warning' : ''}`;
+    el.className = `timer-display${slot.remainingSecs<=60?' warning':''}`;
   }
 }
 
@@ -829,8 +841,8 @@ function stopTimer(slotId) {
   const slot = slots.find(s => s.id === slotId);
   if (!slot) return;
   clearInterval(slot.timerInterval);
-  const secsStudied = (slot.durationMins * 60) - slot.remainingSecs;
-  slot.pendingMins = (slot.pendingMins || 0) + Math.max(0, Math.round(secsStudied / 60));
+  const secsStudied = (slot.durationMins*60) - slot.remainingSecs;
+  slot.pendingMins = (slot.pendingMins||0) + Math.max(0, Math.round(secsStudied/60));
   timerDone(slotId);
 }
 
@@ -853,7 +865,7 @@ function markDone(slotId) {
   }
 
   if (meta) {
-    const spent = slot.isRev ? (meta.revSpentMins || 0) : (meta.spentMins || 0);
+    const spent = slot.isRev ? (meta.revSpentMins||0) : (meta.spentMins||0);
     const alloc = slot.isRev ? meta.revMins : meta.prepMins;
     const overAllocated = !slot.isRev && spent > alloc;
     if (slot.isRev) {
@@ -867,7 +879,7 @@ function markDone(slotId) {
       if (overAllocated) {
         const subj = plan.subjects.find(s => s.id === subjId);
         const subjName = subj ? subj.name : 'this subject';
-        setTimeout(() => showToast(`This topic took longer than planned. Hit Recalibrate to adjust remaining ${subjName} topics 🔄`), 2500);
+        setTimeout(() => showToast(`Took longer than planned. Hit Recalibrate to adjust ${subjName} 🔄`), 2500);
       } else {
         showToast(randomMsg('prep'));
       }
@@ -876,10 +888,15 @@ function markDone(slotId) {
     openSubjects.add(subjId);
   }
 
+  // Clear highlight for this slot's topic
+  const mapKey = slot.isRev ? slot.topicKey + '|rev' : slot.topicKey;
+  clearTopicHighlight(slot.topicKey, slot.isRev);
+  delete topicSlotMap[mapKey];
+
   renderTopicsTable();
   updateDashboard();
   savePlannerState();
-  removeSlot(slotId);
+  removeSlotSilent(slotId);
 }
 
 function showMoreTime(slotId) {
@@ -899,8 +916,8 @@ function selectMoreMins(slotId, mins, btn) {
 function selectEffortType(slotId, type) {
   const slot = slots.find(s => s.id === slotId);
   if (slot) slot.effortType = type;
-  document.getElementById(`slot-budget-btn-${slotId}`).className = 'effort-btn' + (type === 'budget' ? ' selected-budget' : '');
-  document.getElementById(`slot-bonus-btn-${slotId}`).className  = 'effort-btn' + (type === 'bonus'  ? ' selected-bonus'  : '');
+  document.getElementById(`slot-budget-btn-${slotId}`).className = 'effort-btn'+(type==='budget'?' selected-budget':'');
+  document.getElementById(`slot-bonus-btn-${slotId}`).className  = 'effort-btn'+(type==='bonus'?' selected-bonus':'');
 }
 
 function confirmMoreTime(slotId) {
@@ -908,9 +925,7 @@ function confirmMoreTime(slotId) {
   if (!slot) return;
   if (!slot.selectedMoreMins) { alert('Please select how many more minutes.'); return; }
   if (!slot.effortType) { alert('Please select if this is from your plan or extra effort.'); return; }
-
   slot.extraEffortType = slot.effortType;
-
   if (slot.effortType === 'bonus') {
     bonusMins += slot.selectedMoreMins;
     activateBonusStardust();
@@ -925,28 +940,45 @@ function confirmMoreTime(slotId) {
 function logStudyTime(slot, mins) {
   if (mins <= 0) return;
   todayMins += mins;
-
   if (slot.topicKey) {
     const meta = topicMeta[slot.topicKey];
     if (meta) {
       if (slot.isRev) {
-        meta.revSpentMins = (meta.revSpentMins || 0) + mins;
+        meta.revSpentMins = (meta.revSpentMins||0) + mins;
       } else if (slot.extraEffortType === 'bonus') {
         totalSpentMins += mins;
       } else {
-        meta.spentMins = (meta.spentMins || 0) + mins;
+        meta.spentMins = (meta.spentMins||0) + mins;
         totalSpentMins += mins;
       }
     }
   } else {
     totalSpentMins += mins;
   }
-
   slot.extraEffortType = null;
   updateDashboard();
 }
 
+// removeSlot called by user clicking ✕ Remove — clears highlight
 function removeSlot(slotId) {
+  const slot = slots.find(s => s.id === slotId);
+  if (slot) {
+    clearInterval(slot.timerInterval);
+    // Clear highlight for this slot's topic
+    if (slot.topicKey) {
+      const mapKey = slot.isRev ? slot.topicKey + '|rev' : slot.topicKey;
+      clearTopicHighlight(slot.topicKey, slot.isRev);
+      delete topicSlotMap[mapKey];
+    }
+  }
+  slots = slots.filter(s => s.id !== slotId);
+  const card = document.getElementById(`slot-${slotId}`);
+  if (card) card.remove();
+  removeSlotFromStorage(slotId);
+}
+
+// removeSlotSilent called after markDone — highlight already cleared before calling this
+function removeSlotSilent(slotId) {
   const slot = slots.find(s => s.id === slotId);
   if (slot) clearInterval(slot.timerInterval);
   slots = slots.filter(s => s.id !== slotId);
@@ -957,34 +989,30 @@ function removeSlot(slotId) {
 
 // ── SLOT STORAGE ──
 function saveSlotToStorage(slotId, key, isRev) {
-  const stored = JSON.parse(localStorage.getItem('activeSlots') || '[]');
+  const stored = JSON.parse(localStorage.getItem('activeSlots')||'[]');
   const existing = stored.findIndex(s => s.slotId === slotId);
-  const entry = { slotId, key, isRev };
+  const entry = {slotId, key, isRev};
   if (existing >= 0) stored[existing] = entry;
   else stored.push(entry);
   localStorage.setItem('activeSlots', JSON.stringify(stored));
 }
 
 function removeSlotFromStorage(slotId) {
-  const stored = JSON.parse(localStorage.getItem('activeSlots') || '[]');
+  const stored = JSON.parse(localStorage.getItem('activeSlots')||'[]');
   localStorage.setItem('activeSlots', JSON.stringify(stored.filter(s => s.slotId !== slotId)));
 }
 
 function restoreSlotsFromStorage() {
-  const stored = JSON.parse(localStorage.getItem('activeSlots') || '[]');
-  stored.forEach(({ slotId, key, isRev }) => {
+  const stored = JSON.parse(localStorage.getItem('activeSlots')||'[]');
+  stored.forEach(({slotId, key, isRev}) => {
     if (!topicMeta[key]) return;
     addSlot();
-    const newSlot = slots[slots.length - 1];
+    const newSlot = slots[slots.length-1];
     loadTopicIntoSlot(newSlot.id, key, isRev);
+    const mapKey = isRev ? key+'|rev' : key;
+    topicSlotMap[mapKey] = newSlot.id;
+    addTopicHighlight(key, isRev);
   });
-}
-
-function highlightTopicRow(key, isRev) {
-  document.querySelectorAll('.topic-row.in-slot').forEach(r => r.classList.remove('in-slot'));
-  const selector = isRev ? `[data-key="${key}"].revision-row` : `[data-key="${key}"]:not(.revision-row)`;
-  const row = document.querySelector(selector);
-  if (row) row.classList.add('in-slot');
 }
 
 // ── SAVE ──
@@ -1005,9 +1033,9 @@ async function savePlannerState() {
 function formatMins(mins) {
   if (!mins) return '0m';
   if (mins < 60) return `${mins}m`;
-  const h = Math.floor(mins / 60);
-  const m = mins % 60;
+  const h = Math.floor(mins/60);
+  const m = mins%60;
   return m > 0 ? `${h}h ${m}m` : `${h}h`;
 }
 
-function goReplan() { localStorage.setItem('replan', '1'); window.location.href = 'index.html'; }
+function goReplan() { localStorage.setItem('replan','1'); window.location.href='index.html'; }
