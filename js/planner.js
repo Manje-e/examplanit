@@ -65,7 +65,6 @@ async function loadPlan() {
 
 // ── TIME BUDGET ──
 
-// Count available study mins between two dates using plan's daily hours
 function calcBudgetBetween(startStr, endStr) {
   if (!startStr || !endStr) return 0;
   let wd = 0, we = 0;
@@ -79,17 +78,15 @@ function calcBudgetBetween(startStr, endStr) {
   return Math.round((wd * (parseFloat(plan.weekday_hrs)||0) + we * (parseFloat(plan.weekend_hrs)||0)) * 60);
 }
 
-// Per-subject budget: use subject's own exam_date if set, else global exam_start
 function calcSubjectBudgetMins(subj) {
-  const examDate = subj.exam_date || plan.exam_start;
+  const examDate = subj.examDate || plan.exam_start;
   return calcBudgetBetween(plan.study_start, examDate);
 }
 
-// Global budget (for dashboard ring — use latest exam date across all subjects)
 function calcTotalBudgetMins() {
   let latest = plan.exam_start;
   (plan.subjects||[]).forEach(s => {
-    if (s.exam_date && (!latest || s.exam_date > latest)) latest = s.exam_date;
+    if (s.examDate && (!latest || s.examDate > latest)) latest = s.examDate;
   });
   return calcBudgetBetween(plan.study_start, latest || plan.exam_start);
 }
@@ -108,32 +105,42 @@ function diffWeight(diff) {
 
 // Days until a subject's exam (for urgency coaching)
 function daysUntilExam(subj) {
-  const examDate = subj.exam_date || plan.exam_start;
+  const examDate = subj.examDate || plan.exam_start;
   if (!examDate) return null;
   const today = new Date(); today.setHours(0,0,0,0);
   const exam = new Date(examDate); exam.setHours(0,0,0,0);
   return Math.ceil((exam - today) / 86400000);
 }
 
+// Is a subject's exam already past? Uses examDate if set, else exam_end
+function isExamPast(subj) {
+  const today = new Date(); today.setHours(0,0,0,0);
+  if (subj.examDate) {
+    const exam = new Date(subj.examDate); exam.setHours(0,0,0,0);
+    return today > exam;
+  }
+  // No individual exam date — gray out only after global exam_end
+  if (plan.exam_end) {
+    const end = new Date(plan.exam_end); end.setHours(0,0,0,0);
+    return today > end;
+  }
+  return false;
+}
+
 // ── TOPIC META ──
-// Each subject gets its own budget based on its exam date.
-// prepMins per topic = subjectBudget / topicCountInSubject * difficultyWeight (normalised within subject)
 function calcTopicPrepMins(subj) {
   const totalBudget = calcTotalBudgetMins();
   const topics = subj.topics || [];
   if (!topics.length) return 0;
 
-  // Total weighted topic count across ALL subjects
   const totalWeightedTopics = (plan.subjects || []).reduce((sum, s) => {
     return sum + (s.topics || []).length * diffWeight(s.difficulty);
   }, 0);
   if (!totalWeightedTopics) return 0;
 
-  // This subject's share = its weighted topics / total weighted topics
   const subjWeight = topics.length * diffWeight(subj.difficulty);
   const subjBudget = (subjWeight / totalWeightedTopics) * totalBudget;
 
-  // Split evenly across this subject's topics (difficulty already applied at subject level)
   return Math.max(5, Math.round(subjBudget / topics.length));
 }
 
@@ -170,11 +177,7 @@ function ensureAllTopicsMeta() {
 }
 
 // ── RECALIBRATE ──
-// Per subject: remaining = subjectBudget - spentMins across that subject's topics
-// Redistribute remaining across unfinished topics in that subject
 function recalibrate() {
-  // Use same shared budget logic as initTopicMeta
-  // Total budget split across all subjects weighted by difficulty
   const totalBudget = calcTotalBudgetMins();
   const totalWeightedTopics = (plan.subjects || []).reduce((sum, s) => {
     return sum + (s.topics || []).length * diffWeight(s.difficulty);
@@ -185,11 +188,9 @@ function recalibrate() {
     const topics = s.topics || [];
     if (!topics.length) return;
 
-    // This subject's share of total budget
     const subjWeight = topics.length * diffWeight(s.difficulty);
     const subjBudget = (subjWeight / totalWeightedTopics) * totalBudget;
 
-    // How much already spent on this subject
     let subjectSpent = 0;
     topics.forEach((t, i) => {
       const meta = topicMeta[`${s.id}_${i}`];
@@ -237,10 +238,11 @@ function renderTopicsTable() {
   }
   document.getElementById('nudge-banner').style.display = shouldNudge ? 'block' : 'none';
 
-  // Coach banner — find most urgent subject
+  // Coach banner — find most urgent subject that is NOT past
   const coachBanner = document.getElementById('coach-banner');
   if (coachBanner) {
     const urgent = plan.subjects
+      .filter(s => !isExamPast(s))
       .map(s => ({ s, days: daysUntilExam(s) }))
       .filter(x => x.days !== null && x.days >= 0)
       .sort((a, b) => a.days - b.days)[0];
@@ -259,6 +261,8 @@ function renderTopicsTable() {
   plan.subjects.forEach(s => {
     if (!s.topics?.length) return;
 
+    const examPast = isExamPast(s);
+
     let subjTotal = 0, subjDone = 0;
     s.topics.forEach((t, i) => {
       const meta = topicMeta[`${s.id}_${i}`];
@@ -267,111 +271,127 @@ function renderTopicsTable() {
       if (meta.prepDone) subjDone++;
     });
     const subjPct = subjTotal > 0 ? subjDone / subjTotal : 0;
-    const isAmber = shouldNudge && subjDone === 0;
-    const isOpen  = openSubjects.has(s.id);
+    const isAmber = shouldNudge && subjDone === 0 && !examPast;
+    const isOpen  = openSubjects.has(s.id) && !examPast;
     const badge   = subjectBadges[s.id] || '';
     const days = daysUntilExam(s);
-    const urgencyBadge = days !== null && days <= 7 && days >= 0
+
+    // Urgency badge — only if not past
+    const urgencyBadge = !examPast && days !== null && days <= 7 && days >= 0
       ? ` <span style="font-size:0.62rem;background:#fff0e0;color:#c06000;border:1px solid #f0c080;border-radius:8px;padding:1px 6px;font-weight:800;">🔥 ${days === 0 ? 'Today!' : days === 1 ? 'Tomorrow!' : `${days}d left`}</span>`
+      : '';
+
+    // Exam done badge
+    const doneBadge = examPast
+      ? ` <span style="font-size:0.62rem;background:#e8f5e8;color:#408040;border:1px solid #a0d0a0;border-radius:8px;padding:1px 6px;font-weight:800;">✅ Exam done</span>`
       : '';
 
     const group = document.createElement('div');
     group.className = 'subject-group';
 
     const subjectRow = document.createElement('div');
-    subjectRow.className = `subject-row${isAmber ? ' amber' : ''}${isOpen ? ' open' : ''}`;
+    subjectRow.className = `subject-row${isAmber ? ' amber' : ''}${isOpen ? ' open' : ''}${examPast ? ' exam-past' : ''}`;
     subjectRow.dataset.subjId = s.id;
     subjectRow.innerHTML = `
       <span class="subj-row-emoji">${s.emoji}</span>
-      <span class="subj-row-name">${s.name}${badge ? ' <span class="subj-badge">'+badge+'</span>' : ''}${urgencyBadge}</span>
+      <span class="subj-row-name${examPast ? ' past-name' : ''}">${s.name}${badge ? ' <span class="subj-badge">'+badge+'</span>' : ''}${urgencyBadge}${doneBadge}</span>
       <span class="subj-row-pct">${Math.round(subjPct*100)}%</span>
       <div class="subj-prog-wrap"><div class="subj-prog-bar" style="width:${Math.round(subjPct*100)}%"></div></div>
-      <span class="chevron">▼</span>
+      ${!examPast ? '<span class="chevron">▼</span>' : ''}
     `;
-    subjectRow.onclick = () => toggleSubject(s.id);
+
+    // Only make clickable if not past
+    if (!examPast) {
+      subjectRow.onclick = () => toggleSubject(s.id);
+    }
 
     const topicsList = document.createElement('div');
     topicsList.className = `topics-list${isOpen ? ' open' : ''}`;
     topicsList.id = `topics-${s.id}`;
 
-    s.topics.forEach((topic, i) => {
-      const key = `${s.id}_${i}`;
-      const meta = topicMeta[key];
-      if (!meta) return;
+    // Don't render topic rows for past subjects
+    if (!examPast) {
+      s.topics.forEach((topic, i) => {
+        const key = `${s.id}_${i}`;
+        const meta = topicMeta[key];
+        if (!meta) return;
 
-      // Prep row
-      const row = document.createElement('div');
-      row.className = `topic-row${isAmber && !meta.prepDone ? ' amber-topic' : ''}`;
-      row.dataset.key = key;
-      row.draggable = !meta.prepDone;
-      if (!meta.prepDone) {
-        row.addEventListener('dragstart', e => {
-          e.dataTransfer.setData('text/plain', key);
-          e.dataTransfer.effectAllowed = 'copy';
-        });
-      }
-
-      const nameEl = document.createElement('span');
-      nameEl.className = `topic-name${meta.prepDone ? ' done-text' : ''}`;
-      nameEl.textContent = topic;
-
-      const remaining = Math.max(0, meta.prepMins - (meta.spentMins || 0));
-      const timeEl = document.createElement('span');
-      timeEl.className = `topic-time${meta.prepDone ? ' faded' : ''}`;
-      timeEl.textContent = meta.prepDone ? formatMins(meta.prepMins) : formatMins(remaining) + (meta.spentMins > 0 ? ' left' : '');
-
-      const check = document.createElement('div');
-      check.className = `topic-check${meta.prepDone ? ' checked' : ''}`;
-      check.onclick = e => { e.stopPropagation(); togglePrepDone(key, s.id); };
-
-      const handle = document.createElement('span');
-      handle.className = 'topic-drag-handle';
-      handle.textContent = '⠿';
-
-      row.appendChild(nameEl);
-      row.appendChild(timeEl);
-      row.appendChild(check);
-      row.appendChild(handle);
-      topicsList.appendChild(row);
-
-      // Revision row — only after prep done
-      if (meta.prepDone) {
-        const revRow = document.createElement('div');
-        revRow.className = 'topic-row revision-row';
-        revRow.dataset.key = key;
-        revRow.draggable = !meta.revDone;
-        if (!meta.revDone) {
-          revRow.addEventListener('dragstart', e => {
-            e.dataTransfer.setData('text/plain', key + '|rev');
+        // Prep row
+        const row = document.createElement('div');
+        row.className = `topic-row${isAmber && !meta.prepDone ? ' amber-topic' : ''}`;
+        row.dataset.key = key;
+        row.draggable = !meta.prepDone;
+        if (!meta.prepDone) {
+          row.addEventListener('dragstart', e => {
+            e.dataTransfer.setData('text/plain', key);
             e.dataTransfer.effectAllowed = 'copy';
           });
         }
 
-        const revName = document.createElement('span');
-        revName.className = `topic-name${meta.revDone ? ' done-text' : ''}`;
-        revName.textContent = `↩ ${topic} (Revision)`;
-        revName.style.color = meta.revDone ? '#bbb' : '#5090c0';
-        revName.style.fontSize = '0.78rem';
+        const nameEl = document.createElement('span');
+        nameEl.className = `topic-name${meta.prepDone ? ' done-text' : ''}`;
+        nameEl.textContent = topic;
+        nameEl.title = topic; // tooltip for truncated names
 
-        const revTime = document.createElement('span');
-        revTime.className = `topic-time revision-time${meta.revDone ? ' faded' : ''}`;
-        revTime.textContent = formatMins(meta.revMins);
+        const remaining = Math.max(0, meta.prepMins - (meta.spentMins || 0));
+        const timeEl = document.createElement('span');
+        timeEl.className = `topic-time${meta.prepDone ? ' faded' : ''}`;
+        timeEl.textContent = meta.prepDone ? formatMins(meta.prepMins) : formatMins(remaining) + (meta.spentMins > 0 ? ' left' : '');
 
-        const revCheck = document.createElement('div');
-        revCheck.className = `topic-check rev-check${meta.revDone ? ' checked' : ''}`;
-        revCheck.onclick = e => { e.stopPropagation(); toggleRevDone(key, s.id); };
+        const check = document.createElement('div');
+        check.className = `topic-check${meta.prepDone ? ' checked' : ''}`;
+        check.onclick = e => { e.stopPropagation(); togglePrepDone(key, s.id); };
 
-        const revHandle = document.createElement('span');
-        revHandle.className = 'topic-drag-handle';
-        revHandle.textContent = '⠿';
+        const handle = document.createElement('span');
+        handle.className = 'topic-drag-handle';
+        handle.textContent = '⠿';
 
-        revRow.appendChild(revName);
-        revRow.appendChild(revTime);
-        revRow.appendChild(revCheck);
-        revRow.appendChild(revHandle);
-        topicsList.appendChild(revRow);
-      }
-    });
+        row.appendChild(nameEl);
+        row.appendChild(timeEl);
+        row.appendChild(check);
+        row.appendChild(handle);
+        topicsList.appendChild(row);
+
+        // Revision row — only after prep done
+        if (meta.prepDone) {
+          const revRow = document.createElement('div');
+          revRow.className = 'topic-row revision-row';
+          revRow.dataset.key = key;
+          revRow.draggable = !meta.revDone;
+          if (!meta.revDone) {
+            revRow.addEventListener('dragstart', e => {
+              e.dataTransfer.setData('text/plain', key + '|rev');
+              e.dataTransfer.effectAllowed = 'copy';
+            });
+          }
+
+          const revName = document.createElement('span');
+          revName.className = `topic-name${meta.revDone ? ' done-text' : ''}`;
+          revName.textContent = `↩ ${topic} (Revision)`;
+          revName.title = `↩ ${topic} (Revision)`;
+          revName.style.color = meta.revDone ? '#bbb' : '#5090c0';
+          revName.style.fontSize = '0.78rem';
+
+          const revTime = document.createElement('span');
+          revTime.className = `topic-time revision-time${meta.revDone ? ' faded' : ''}`;
+          revTime.textContent = formatMins(meta.revMins);
+
+          const revCheck = document.createElement('div');
+          revCheck.className = `topic-check rev-check${meta.revDone ? ' checked' : ''}`;
+          revCheck.onclick = e => { e.stopPropagation(); toggleRevDone(key, s.id); };
+
+          const revHandle = document.createElement('span');
+          revHandle.className = 'topic-drag-handle';
+          revHandle.textContent = '⠿';
+
+          revRow.appendChild(revName);
+          revRow.appendChild(revTime);
+          revRow.appendChild(revCheck);
+          revRow.appendChild(revHandle);
+          topicsList.appendChild(revRow);
+        }
+      });
+    }
 
     group.appendChild(subjectRow);
     group.appendChild(topicsList);
@@ -392,7 +412,6 @@ function togglePrepDone(key, subjId) {
   meta.prepDone = !meta.prepDone;
   if (!meta.prepDone) {
     meta.revDone = false;
-    // Deduct the credited time back from todayMins and totalSpentMins
     const credited = meta.spentMins || 0;
     todayMins = Math.max(0, todayMins - credited);
     totalSpentMins = Math.max(0, totalSpentMins - credited);
@@ -400,7 +419,6 @@ function togglePrepDone(key, subjId) {
   }
   openSubjects.add(subjId);
   if (meta.prepDone) {
-    // Credit full prepMins to todayMins and spentMins if not already spent
     const alreadySpent = meta.spentMins || 0;
     const remaining = Math.max(0, meta.prepMins - alreadySpent);
     if (remaining > 0) {
@@ -424,14 +442,12 @@ function toggleRevDone(key, subjId) {
   meta.revDone = !meta.revDone;
   openSubjects.add(subjId);
   if (!meta.revDone) {
-    // Deduct the credited rev time back
     const credited = meta.revSpentMins || 0;
     todayMins = Math.max(0, todayMins - credited);
     totalSpentMins = Math.max(0, totalSpentMins - credited);
     meta.revSpentMins = 0;
   }
   if (meta.revDone) {
-    // Credit full revMins to todayMins and revSpentMins if not already spent
     const alreadySpent = meta.revSpentMins || 0;
     const remaining = Math.max(0, meta.revMins - alreadySpent);
     if (remaining > 0) {
@@ -456,7 +472,6 @@ function checkSubjectComplete(subjId) {
     return meta && meta.prepDone;
   });
   if (allDone && !subjectBadges[subjId]) {
-    // show sticker picker
     pendingStickerSubjId = subjId;
     document.getElementById('sticker-overlay').classList.add('open');
   }
@@ -515,18 +530,15 @@ function updateDashboard() {
   const todayBudget = calcTodayBudgetMins();
   const totalBudget = calcTotalBudgetMins();
 
-  // Ring 1: Today
   const todayPct = todayBudget > 0 ? Math.min(1, todayMins / todayBudget) : 0;
   setRing('ring-today-fill', todayPct, 364);
   document.getElementById('ring-today-val').textContent = todayMins;
   document.getElementById('ring-today-unit').textContent = `/ ${todayBudget} mins`;
 
-  // Ring 2: Topics done
   const topicsPct = calcTopicsDonePct();
   setRing('ring-topics-fill', topicsPct, 364);
   document.getElementById('ring-topics-val').textContent = Math.round(topicsPct * 100) + '%';
 
-  // Ring 3: Bonus mins (fills at 60 bonus mins)
   const bonusPct = Math.min(1, bonusMins / 60);
   setRing('ring-bonus-fill', bonusPct, 364);
   document.getElementById('ring-bonus-val').textContent = bonusMins;
@@ -548,15 +560,12 @@ function toggleSpeedMode() {
 }
 
 // ── ANIMATIONS via canvas-confetti ──
-
-// Topic session done — cannon burst from both sides
 function confettiBomb() {
   const count = 120;
   confetti({ particleCount: count/2, angle: 60, spread: 70, origin: { x: 0, y: 0.6 }, colors: ['#c8b8f8','#f9c74f','#ff6b9d','#43aa8b','#f94144'] });
   confetti({ particleCount: count/2, angle: 120, spread: 70, origin: { x: 1, y: 0.6 }, colors: ['#c8b8f8','#f9c74f','#ff6b9d','#43aa8b','#f94144'] });
 }
 
-// Full topic done — fireworks
 function balloonBomb() {
   const duration = 2000;
   const end = Date.now() + duration;
@@ -565,16 +574,13 @@ function balloonBomb() {
     confetti({ particleCount: 6, angle: 120, spread: 55, origin: { x: 1, y: 0.7 }, colors: ['#43aa8b','#f94144','#c8b8f8'] });
     if (Date.now() < end) requestAnimationFrame(frame);
   })();
-  // Emoji burst in the middle
   confetti({ particleCount: 30, spread: 120, origin: { x: 0.5, y: 0.5 },
     shapes: ['circle'], colors: ['#ff6b9d','#f9c74f','#43aa8b','#c8b8f8','#f94144'],
     scalar: 2, ticks: 300
   });
 }
 
-// Extra effort — muscle emojis explode everywhere
 function muscleExplosion() {
-  // Gold stars burst — canvas-confetti native star shape
   const starDefaults = {
     spread: 360, ticks: 80, gravity: 0, decay: 0.94, startVelocity: 28,
     colors: ['#FFE400', '#FFBD00', '#E89400', '#FFCA6C', '#FDFFB8'],
@@ -587,7 +593,6 @@ function muscleExplosion() {
   setTimeout(shoot, 120);
   setTimeout(shoot, 240);
 
-  // 💪 emoji confetti via shapeFromText
   const scalar = 2;
   const muscle = confetti.shapeFromText({ text: '💪', scalar });
   setTimeout(() => {
@@ -599,7 +604,6 @@ function muscleExplosion() {
   }, 200);
 }
 
-// Subject complete — sticker burst (already working, keep as is)
 function activateBonusStardust() { muscleExplosion(); }
 function pulseRing() {}
 function triggerSparkleTrail() {}
@@ -633,20 +637,20 @@ function addSlot() {
   card.className = 'slot-card';
   card.id = `slot-${id}`;
   card.innerHTML = `
-    <div class="slot-drop-zone" id="slot-drop-${id}">Drop a topic here to begin 👆</div>
+    <div class="slot-drop-zone" id="slot-drop-${id}">Drop a topic here 👆</div>
     <div class="slot-topic-loaded" id="slot-loaded-${id}">
       <div class="slot-topic-name" id="slot-tname-${id}"></div>
       <div class="slot-topic-meta" id="slot-tmeta-${id}"></div>
       <div class="slot-progress-bar-wrap"><div class="slot-progress-bar" id="slot-prog-${id}" style="width:0%"></div></div>
     </div>
     <div class="slot-duration-pick" id="slot-dur-${id}">
-      <div class="dur-label">How long is this session?</div>
+      <div class="dur-label">How long?</div>
       <div class="dur-btns" id="slot-dur-btns-${id}"></div>
       <div class="dur-custom">
         <input type="number" min="1" placeholder="custom" id="slot-custom-${id}">
         <span class="dur-max-note" id="slot-maxnote-${id}"></span>
       </div>
-      <button class="start-timer-btn" onclick="startTimer(${id})">🚀 Start Timer!</button>
+      <button class="start-timer-btn" onclick="startTimer(${id})">🚀 Start!</button>
     </div>
     <div class="slot-timer" id="slot-timer-${id}">
       <div class="timer-display" id="slot-time-${id}">00:00</div>
@@ -656,10 +660,10 @@ function addSlot() {
       </div>
     </div>
     <div class="slot-done-ask" id="slot-done-${id}">
-      <div class="done-ask-title">⏰ Time's up! Are you done?</div>
+      <div class="done-ask-title">⏰ Time's up! Done?</div>
       <div class="done-ask-btns">
-        <button class="done-yes-btn" onclick="markDone(${id})">✅ Yes, Done!</button>
-        <button class="done-more-btn" onclick="showMoreTime(${id})">⏱ Need More Time</button>
+        <button class="done-yes-btn" onclick="markDone(${id})">✅ Yes!</button>
+        <button class="done-more-btn" onclick="showMoreTime(${id})">⏱ More time</button>
       </div>
     </div>
     <div class="slot-more-time" id="slot-more-${id}">
@@ -670,12 +674,12 @@ function addSlot() {
         <button class="more-min-btn" onclick="selectMoreMins(${id},20,this)">20m</button>
         <button class="more-min-btn" onclick="selectMoreMins(${id},30,this)">30m</button>
       </div>
-      <div class="more-time-type-label">Is this from your plan or extra effort?</div>
+      <div class="more-time-type-label">From plan or extra effort?</div>
       <div class="more-time-type">
-        <button class="effort-btn" id="slot-budget-btn-${id}" onclick="selectEffortType(${id},'budget')">📅 From my plan</button>
-        <button class="effort-btn" id="slot-bonus-btn-${id}" onclick="selectEffortType(${id},'bonus')">⭐ Extra effort!</button>
+        <button class="effort-btn" id="slot-budget-btn-${id}" onclick="selectEffortType(${id},'budget')">📅 My plan</button>
+        <button class="effort-btn" id="slot-bonus-btn-${id}" onclick="selectEffortType(${id},'bonus')">⭐ Extra!</button>
       </div>
-      <button class="confirm-more-btn" onclick="confirmMoreTime(${id})">▶ Continue studying</button>
+      <button class="confirm-more-btn" onclick="confirmMoreTime(${id})">▶ Continue</button>
     </div>
     <div class="slot-footer">
       <button class="remove-slot-btn" onclick="removeSlot(${id})">✕ Remove</button>
@@ -716,18 +720,16 @@ function loadTopicIntoSlot(slotId, key, isRev) {
 
   slot.topicKey = key;
   slot.isRev = isRev;
-  slot.allocMins = remaining; // remaining, not total
+  slot.allocMins = remaining;
 
-  // Persist slot to localStorage so it survives refresh
   saveSlotToStorage(slotId, key, isRev);
 
   document.getElementById(`slot-drop-${slotId}`).style.display = 'none';
   const loaded = document.getElementById(`slot-loaded-${slotId}`);
   loaded.style.display = 'block';
   document.getElementById(`slot-tname-${slotId}`).textContent = isRev ? `↩ ${topicName} (Revision)` : topicName;
-  document.getElementById(`slot-tmeta-${slotId}`).textContent = `${subj?.emoji||''} ${subj?.name||''} · ${formatMins(remaining)} remaining`;
+  document.getElementById(`slot-tmeta-${slotId}`).textContent = `${subj?.emoji||''} ${subj?.name||''} · ${formatMins(remaining)} left`;
 
-  // Progress bar
   const pct = allocMins > 0 ? Math.round(spentSoFar / allocMins * 100) : 0;
   const prog = document.getElementById(`slot-prog-${slotId}`);
   if (prog) prog.style.width = pct + '%';
@@ -797,7 +799,6 @@ function runTimer(slotId) {
     updateTimerDisplay(slotId);
     if (slot.remainingSecs <= 0) {
       clearInterval(slot.timerInterval);
-      // Store pending mins — only log to todayMins when user clicks Yes Done
       slot.pendingMins = (slot.pendingMins || 0) + slot.durationMins;
       timerDone(slotId);
     }
@@ -829,7 +830,6 @@ function stopTimer(slotId) {
   if (!slot) return;
   clearInterval(slot.timerInterval);
   const secsStudied = (slot.durationMins * 60) - slot.remainingSecs;
-  // Store mins on slot — only log to todayMins/meta when user confirms Yes Done
   slot.pendingMins = (slot.pendingMins || 0) + Math.max(0, Math.round(secsStudied / 60));
   timerDone(slotId);
 }
@@ -847,13 +847,11 @@ function markDone(slotId) {
 
   document.getElementById(`slot-done-${slotId}`).style.display = 'none';
 
-  // NOW log the pending mins to todayMins and topic meta
   if (slot.pendingMins) {
     logStudyTime(slot, slot.pendingMins);
     slot.pendingMins = 0;
   }
 
-  // Yes Done always marks topic complete
   if (meta) {
     const spent = slot.isRev ? (meta.revSpentMins || 0) : (meta.spentMins || 0);
     const alloc = slot.isRev ? meta.revMins : meta.prepMins;
@@ -911,16 +909,13 @@ function confirmMoreTime(slotId) {
   if (!slot.selectedMoreMins) { alert('Please select how many more minutes.'); return; }
   if (!slot.effortType) { alert('Please select if this is from your plan or extra effort.'); return; }
 
-  // Tag the slot so logStudyTime knows what to do when this timer ends
   slot.extraEffortType = slot.effortType;
 
   if (slot.effortType === 'bonus') {
-    // Bonus: add to bonusMins display, but do NOT touch topic's spentMins
     bonusMins += slot.selectedMoreMins;
     activateBonusStardust();
     showToast(randomMsg('bonus'));
   }
-  // Both types: restart timer for the extra duration
   document.getElementById(`slot-more-${slotId}`).style.display = 'none';
   slot.durationMins = slot.selectedMoreMins;
   startTimerDirect(slotId);
@@ -937,11 +932,8 @@ function logStudyTime(slot, mins) {
       if (slot.isRev) {
         meta.revSpentMins = (meta.revSpentMins || 0) + mins;
       } else if (slot.extraEffortType === 'bonus') {
-        // Bonus effort: only count toward today + bonusMins, NOT topic's spentMins
-        // bonusMins already added in confirmMoreTime, just track total
         totalSpentMins += mins;
       } else {
-        // Normal session or "from plan" — counts toward topic progress
         meta.spentMins = (meta.spentMins || 0) + mins;
         totalSpentMins += mins;
       }
@@ -950,7 +942,6 @@ function logStudyTime(slot, mins) {
     totalSpentMins += mins;
   }
 
-  // Reset extraEffortType after logging
   slot.extraEffortType = null;
   updateDashboard();
 }
@@ -982,7 +973,6 @@ function removeSlotFromStorage(slotId) {
 function restoreSlotsFromStorage() {
   const stored = JSON.parse(localStorage.getItem('activeSlots') || '[]');
   stored.forEach(({ slotId, key, isRev }) => {
-    // Only restore if topic still exists in plan
     if (!topicMeta[key]) return;
     addSlot();
     const newSlot = slots[slots.length - 1];
@@ -991,9 +981,7 @@ function restoreSlotsFromStorage() {
 }
 
 function highlightTopicRow(key, isRev) {
-  // Remove highlight from all rows first
   document.querySelectorAll('.topic-row.in-slot').forEach(r => r.classList.remove('in-slot'));
-  // Find and highlight the dropped topic row
   const selector = isRev ? `[data-key="${key}"].revision-row` : `[data-key="${key}"]:not(.revision-row)`;
   const row = document.querySelector(selector);
   if (row) row.classList.add('in-slot');

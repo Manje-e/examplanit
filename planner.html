@@ -13,18 +13,18 @@
 .planner-card {
   background: #fff; border-radius: 24px;
   box-shadow: 0 8px 32px rgba(0,0,0,0.10);
-  max-width: 1200px; margin: 0 auto; overflow: visible;
+  max-width: 1200px; margin: 0 auto; overflow: hidden;
 }
 
 /* HEADER */
 .planner-header {
   background: linear-gradient(120deg, #fce4f0, #e8eeff, #d8f5ec);
   padding: 16px 28px; border-radius: 24px 24px 0 0;
-  display: flex; align-items: center; gap: 14px;
+  display: flex; align-items: center; gap: 14px; flex-wrap: wrap;
 }
-.planner-logo { font-family: 'Baloo 2', cursive; font-size: 1.6rem; color: #8090c8; flex: 1; }
+.planner-logo { font-family: 'Baloo 2', cursive; font-size: 1.6rem; color: #8090c8; flex: 1; min-width: 100px; }
 .planner-logo em { color: #c080b0; font-style: normal; }
-.header-actions { display: flex; gap: 10px; }
+.header-actions { display: flex; gap: 10px; flex-wrap: wrap; }
 .replan-btn {
   padding: 6px 16px; background: #fff; border: 1.5px solid #e0d8f0;
   border-radius: 20px; font-size: 0.68rem; font-weight: 800;
@@ -47,24 +47,17 @@
 .dashboard-title { font-family: 'Baloo 2', cursive; font-size: 0.9rem; color: #9070b0; margin-bottom: 20px; text-align: center; }
 .rings-row { display: flex; gap: 40px; align-items: center; justify-content: center; flex-wrap: wrap; }
 .ring-wrap { display: flex; flex-direction: column; align-items: center; gap: 8px; }
-
-.ring-container { position: relative; width: 140px; height: 140px; }
+.ring-container { position: relative; width: 140px; height: 140px; display: inline-block; }
 .ring-svg { transform: rotate(-90deg); }
 .ring-bg { fill: none; stroke: #ede8f8; stroke-width: 11; }
 .ring-fill { fill: none; stroke-width: 11; stroke-linecap: round; transition: stroke-dashoffset 0.8s cubic-bezier(.4,0,.2,1); }
 .ring-fill.today  { stroke: #a080d0; }
 .ring-fill.topics { stroke: #c080b0; }
 .ring-fill.bonus  { stroke: #80b0d0; }
-
-/* Ring containers */
-.ring-container { position: relative; display: inline-block; }
-
 .ring-inner { position: absolute; top: 50%; left: 50%; transform: translate(-50%,-50%); text-align: center; line-height: 1.2; }
 .ring-val { font-family: 'Baloo 2', cursive; font-size: 1.2rem; font-weight: 800; color: #555; }
 .ring-unit { font-size: 0.62rem; color: #b0a0c8; font-family: 'Nunito', sans-serif; font-weight: 700; }
 .ring-label { font-family: 'Nunito', sans-serif; font-size: 0.72rem; font-weight: 700; color: #a090c0; text-align: center; max-width: 130px; }
-
-
 
 .nudge-banner {
   display: none; margin-top: 16px; background: #FFF8E8; border: 1.5px solid #E8C96A;
@@ -82,14 +75,15 @@
   box-shadow: 0 8px 24px rgba(160,128,208,0.2);
   z-index: 9999; opacity: 0; pointer-events: none;
   transition: opacity 0.3s, transform 0.3s;
+  max-width: 90vw; text-align: center;
 }
 .toast-msg.show { opacity: 1; transform: translateX(-50%) translateY(0); }
 
-/* BODY */
-.planner-body { display: grid; grid-template-columns: 1fr 360px; align-items: start; }
+/* BODY — always two columns */
+.planner-body { display: grid; grid-template-columns: 1fr 320px; align-items: start; }
 
 /* TOPICS */
-.topics-section { padding: 20px 28px; border-right: 1px solid #f5f0ff; }
+.topics-section { padding: 20px 28px; border-right: 1px solid #f5f0ff; min-width: 0; }
 .topics-card {
   background: #fdfbff; border: 1.5px solid #ede8f8;
   border-radius: 16px; overflow: hidden;
@@ -102,14 +96,16 @@
 .subject-row { display: flex; align-items: center; gap: 10px; padding: 12px 18px; cursor: pointer; background: #faf6ff; transition: background 0.15s; }
 .subject-row:hover { background: #f3eeff; }
 .subject-row.amber { background: #fff8e6; }
-.subj-row-emoji { font-size: 1.1rem; }
-.subj-row-name { font-family: 'Nunito', sans-serif; font-weight: 800; font-size: 0.88rem; color: #555; flex: 1; }
+.subject-row.exam-past { background: #f5f5f5; opacity: 0.55; cursor: default; }
+.subj-row-emoji { font-size: 1.1rem; flex-shrink: 0; }
+.subj-row-name { font-family: 'Nunito', sans-serif; font-weight: 800; font-size: 0.88rem; color: #555; flex: 1; min-width: 0; }
+.subj-row-name.past-name { text-decoration: line-through; color: #aaa; }
 .subject-row.amber .subj-row-name { color: #a07000; }
 .subj-badge { font-size: 1.1rem; margin-left: 2px; }
-.subj-row-pct { font-size: 0.68rem; font-weight: 700; color: #9070b0; margin-right: 4px; white-space: nowrap; }
-.subj-prog-wrap { width: 60px; height: 6px; background: #ede8f8; border-radius: 4px; overflow: hidden; }
+.subj-row-pct { font-size: 0.68rem; font-weight: 700; color: #9070b0; margin-right: 4px; white-space: nowrap; flex-shrink: 0; }
+.subj-prog-wrap { width: 60px; min-width: 30px; height: 6px; background: #ede8f8; border-radius: 4px; overflow: hidden; flex-shrink: 0; }
 .subj-prog-bar { height: 100%; background: linear-gradient(90deg, #c8b8f8, #a080d0); border-radius: 4px; transition: width 0.4s; }
-.chevron { font-size: 0.68rem; color: #c0b0d8; transition: transform 0.2s; margin-left: 4px; }
+.chevron { font-size: 0.68rem; color: #c0b0d8; transition: transform 0.2s; margin-left: 4px; flex-shrink: 0; }
 .subject-row.open .chevron { transform: rotate(180deg); }
 
 .topics-list { display: none; }
@@ -117,8 +113,8 @@
 
 .topic-row {
   display: grid; grid-template-columns: 1fr auto auto auto;
-  align-items: center; gap: 10px;
-  padding: 8px 18px 8px 40px; border-top: 1px solid #f5f0ff;
+  align-items: center; gap: 8px;
+  padding: 8px 14px 8px 28px; border-top: 1px solid #f5f0ff;
   transition: background 0.15s; cursor: grab;
 }
 .topic-row:hover { background: #fdfaff; }
@@ -126,12 +122,17 @@
 .topic-row.revision-row { background: #eef6ff; border-left: 3px solid #a0c8f0; }
 .topic-row.revision-row:hover { background: #e4f0ff; }
 
-.topic-name { font-family: 'Nunito', sans-serif; font-size: 0.82rem; font-weight: 600; color: #666; }
+/* 2-line clamp on topic names */
+.topic-name {
+  font-family: 'Nunito', sans-serif; font-size: 0.82rem; font-weight: 600; color: #666;
+  display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical;
+  overflow: hidden; min-width: 0;
+}
 .topic-name.done-text { text-decoration: line-through; color: #bbb; }
 .topic-time {
   font-family: 'Nunito', sans-serif; font-size: 0.72rem; font-weight: 700;
   color: #9070b0; background: #f0eaff; padding: 2px 8px;
-  border-radius: 6px; white-space: nowrap; text-align: center;
+  border-radius: 6px; white-space: nowrap; text-align: center; flex-shrink: 0;
 }
 .topic-time.revision-time { background: #dceeff; color: #5090c0; }
 .topic-time.faded { opacity: 0.4; text-decoration: line-through; }
@@ -144,21 +145,24 @@
 .topic-check.checked::after { content: '✓'; color: #fff; font-size: 0.68rem; font-weight: 900; }
 .topic-check.rev-check { border-color: #a0c8f0; }
 .topic-check.rev-check.checked { background: #5090c0; border-color: #5090c0; }
-.topic-drag-handle { color: #d0c8e8; font-size: 0.9rem; cursor: grab; user-select: none; }
+.topic-drag-handle { color: #d0c8e8; font-size: 0.9rem; cursor: grab; user-select: none; flex-shrink: 0; }
+
+.topic-row.in-slot { border: 2px solid #9060c0; border-radius: 8px; background: #f5f0ff; }
+.topic-row.in-slot .topic-name { color: #7040a0; font-weight: 800; }
 
 /* SLOTS */
 .slots-section {
-  padding: 20px 20px;
+  padding: 16px 14px;
   position: sticky; top: 24px;
   max-height: calc(100vh - 48px);
-  overflow-y: auto;
+  overflow-y: auto; min-width: 0;
 }
 .slots-title { font-family: 'Baloo 2', cursive; font-size: 0.88rem; color: #9070b0; margin-bottom: 10px; }
 .add-slot-btn {
   width: 100%; background: #fdfbff; border: 1.5px dashed #c0b0e0;
   border-radius: 14px; padding: 11px; font-family: 'Nunito', sans-serif;
   font-weight: 800; font-size: 0.82rem; color: #a080d0; cursor: pointer;
-  transition: all 0.2s; display: block; margin-bottom: 10px;
+  transition: all 0.2s; display: block; margin-bottom: 10px; box-sizing: border-box;
 }
 .add-slot-btn:hover { background: #f3eeff; border-color: #a080d0; }
 
@@ -170,69 +174,69 @@
 .slot-card.drag-over { border-color: #a080d0; background: #f8f4ff; }
 
 .slot-drop-zone {
-  padding: 16px; min-height: 64px; display: flex; align-items: center; justify-content: center;
-  color: #c0b0d8; font-family: 'Nunito', sans-serif; font-size: 0.78rem; font-weight: 700;
-  border-bottom: 1px solid #f0eaf8;
+  padding: 14px 10px; min-height: 56px; display: flex; align-items: center; justify-content: center;
+  color: #c0b0d8; font-family: 'Nunito', sans-serif; font-size: 0.75rem; font-weight: 700;
+  border-bottom: 1px solid #f0eaf8; text-align: center;
 }
-.slot-topic-loaded { padding: 12px 14px; border-bottom: 1px solid #f0eaf8; display: none; }
-.slot-topic-name { font-family: 'Nunito', sans-serif; font-weight: 800; font-size: 0.85rem; color: #555; }
-.slot-topic-meta { font-size: 0.68rem; color: #b0a0c8; font-family: 'Nunito', sans-serif; font-weight: 600; margin-top: 2px; }
+.slot-topic-loaded { padding: 10px 12px; border-bottom: 1px solid #f0eaf8; display: none; }
+.slot-topic-name { font-family: 'Nunito', sans-serif; font-weight: 800; font-size: 0.82rem; color: #555; word-break: break-word; }
+.slot-topic-meta { font-size: 0.65rem; color: #b0a0c8; font-family: 'Nunito', sans-serif; font-weight: 600; margin-top: 2px; }
 .slot-progress-bar-wrap { height: 5px; background: #f0eaf8; border-radius: 3px; overflow: hidden; margin-top: 6px; }
 .slot-progress-bar { height: 100%; background: linear-gradient(90deg, #c8b8f8, #a080d0); border-radius: 3px; transition: width 0.4s; }
 
-.slot-duration-pick { padding: 12px 14px; display: none; flex-direction: column; gap: 8px; border-bottom: 1px solid #f0eaf8; }
-.dur-label { font-family: 'Nunito', sans-serif; font-weight: 700; font-size: 0.75rem; color: #9070b0; }
-.dur-btns { display: flex; gap: 5px; flex-wrap: wrap; }
+.slot-duration-pick { padding: 10px 12px; display: none; flex-direction: column; gap: 7px; border-bottom: 1px solid #f0eaf8; }
+.dur-label { font-family: 'Nunito', sans-serif; font-weight: 700; font-size: 0.72rem; color: #9070b0; }
+.dur-btns { display: flex; gap: 4px; flex-wrap: wrap; }
 .dur-btn {
   background: #f0eaff; border: 1.5px solid #d8d0f0; color: #8060c0;
-  border-radius: 8px; padding: 4px 10px; font-family: 'Nunito', sans-serif;
-  font-weight: 700; font-size: 0.75rem; cursor: pointer; transition: all 0.15s;
+  border-radius: 8px; padding: 3px 8px; font-family: 'Nunito', sans-serif;
+  font-weight: 700; font-size: 0.72rem; cursor: pointer; transition: all 0.15s;
 }
 .dur-btn:hover, .dur-btn.selected { background: #a080d0; color: #fff; border-color: #a080d0; }
 .dur-btn.disabled-dur { opacity: 0.3; cursor: not-allowed; pointer-events: none; }
 .dur-custom { display: flex; gap: 6px; align-items: center; }
 .dur-custom input {
-  width: 60px; border: 1.5px solid #d8d0f0; border-radius: 8px;
-  padding: 4px 8px; font-family: 'Nunito', sans-serif; font-weight: 700; font-size: 0.75rem; color: #555; outline: none;
+  width: 52px; border: 1.5px solid #d8d0f0; border-radius: 8px;
+  padding: 3px 6px; font-family: 'Nunito', sans-serif; font-weight: 700; font-size: 0.72rem; color: #555; outline: none;
 }
-.dur-max-note { font-size: 0.62rem; color: #c080b0; font-family: 'Nunito', sans-serif; font-weight: 700; }
+.dur-max-note { font-size: 0.6rem; color: #c080b0; font-family: 'Nunito', sans-serif; font-weight: 700; }
 .start-timer-btn {
   background: linear-gradient(135deg, #c8b8f8, #a080d0); color: #fff; border: none;
-  border-radius: 10px; padding: 8px; font-family: 'Nunito', sans-serif;
-  font-weight: 800; font-size: 0.82rem; cursor: pointer; width: 100%;
+  border-radius: 10px; padding: 7px; font-family: 'Nunito', sans-serif;
+  font-weight: 800; font-size: 0.78rem; cursor: pointer; width: 100%;
 }
 
-.slot-timer { padding: 12px 14px; display: none; flex-direction: column; align-items: center; gap: 8px; border-bottom: 1px solid #f0eaf8; }
-.timer-display { font-family: 'Baloo 2', cursive; font-size: 2.2rem; font-weight: 800; color: #555; letter-spacing: 2px; }
+.slot-timer { padding: 10px 12px; display: none; flex-direction: column; align-items: center; gap: 8px; border-bottom: 1px solid #f0eaf8; }
+.timer-display { font-family: 'Baloo 2', cursive; font-size: 2rem; font-weight: 800; color: #555; letter-spacing: 2px; }
 .timer-display.warning { color: #c080b0; animation: blink 1s infinite; }
 @keyframes blink { 0%,100%{opacity:1}50%{opacity:0.5} }
-.timer-controls { display: flex; gap: 8px; }
-.timer-btn { border: none; border-radius: 10px; padding: 6px 14px; font-family: 'Nunito', sans-serif; font-weight: 800; font-size: 0.75rem; cursor: pointer; }
+.timer-controls { display: flex; gap: 6px; }
+.timer-btn { border: none; border-radius: 10px; padding: 5px 12px; font-family: 'Nunito', sans-serif; font-weight: 800; font-size: 0.72rem; cursor: pointer; }
 .timer-btn.pause { background: #f0eaff; color: #8060c0; }
 .timer-btn.stop { background: #fce4f0; color: #c080b0; }
 .timer-btn.stop:hover { background: #c080b0; color: #fff; }
 
-.slot-done-ask { padding: 12px 14px; display: none; flex-direction: column; gap: 8px; border-bottom: 1px solid #f0eaf8; }
-.done-ask-title { font-family: 'Nunito', sans-serif; font-weight: 800; font-size: 0.85rem; color: #555; text-align: center; }
-.done-ask-btns { display: flex; gap: 8px; }
-.done-yes-btn { flex: 1; background: linear-gradient(135deg, #c8b8f8, #a080d0); color: #fff; border: none; border-radius: 10px; padding: 8px; font-family: 'Nunito', sans-serif; font-weight: 800; font-size: 0.78rem; cursor: pointer; }
-.done-more-btn { flex: 1; background: #fce4f0; color: #c080b0; border: 1.5px solid #f0b8d0; border-radius: 10px; padding: 8px; font-family: 'Nunito', sans-serif; font-weight: 800; font-size: 0.78rem; cursor: pointer; }
+.slot-done-ask { padding: 10px 12px; display: none; flex-direction: column; gap: 7px; border-bottom: 1px solid #f0eaf8; }
+.done-ask-title { font-family: 'Nunito', sans-serif; font-weight: 800; font-size: 0.82rem; color: #555; text-align: center; }
+.done-ask-btns { display: flex; gap: 6px; }
+.done-yes-btn { flex: 1; background: linear-gradient(135deg, #c8b8f8, #a080d0); color: #fff; border: none; border-radius: 10px; padding: 7px 4px; font-family: 'Nunito', sans-serif; font-weight: 800; font-size: 0.72rem; cursor: pointer; }
+.done-more-btn { flex: 1; background: #fce4f0; color: #c080b0; border: 1.5px solid #f0b8d0; border-radius: 10px; padding: 7px 4px; font-family: 'Nunito', sans-serif; font-weight: 800; font-size: 0.72rem; cursor: pointer; }
 .done-more-btn:hover { background: #c080b0; color: #fff; border-color: #c080b0; }
 
-.slot-more-time { padding: 12px 14px; display: none; flex-direction: column; gap: 8px; border-bottom: 1px solid #f0eaf8; background: #fdfaff; }
-.more-time-label { font-family: 'Nunito', sans-serif; font-weight: 700; font-size: 0.75rem; color: #9070b0; }
-.more-time-mins { display: flex; gap: 5px; flex-wrap: wrap; }
-.more-min-btn { background: #f0eaff; border: 1.5px solid #d8d0f0; color: #8060c0; border-radius: 8px; padding: 4px 10px; font-family: 'Nunito', sans-serif; font-weight: 700; font-size: 0.72rem; cursor: pointer; }
+.slot-more-time { padding: 10px 12px; display: none; flex-direction: column; gap: 7px; border-bottom: 1px solid #f0eaf8; background: #fdfaff; }
+.more-time-label { font-family: 'Nunito', sans-serif; font-weight: 700; font-size: 0.72rem; color: #9070b0; }
+.more-time-mins { display: flex; gap: 4px; flex-wrap: wrap; }
+.more-min-btn { background: #f0eaff; border: 1.5px solid #d8d0f0; color: #8060c0; border-radius: 8px; padding: 3px 8px; font-family: 'Nunito', sans-serif; font-weight: 700; font-size: 0.68rem; cursor: pointer; }
 .more-min-btn.selected { background: #a080d0; color: #fff; border-color: #a080d0; }
-.more-time-type-label { font-family: 'Nunito', sans-serif; font-weight: 700; font-size: 0.72rem; color: #9070b0; }
-.more-time-type { display: flex; gap: 6px; }
-.effort-btn { flex: 1; border-radius: 8px; padding: 6px 4px; font-family: 'Nunito', sans-serif; font-weight: 700; font-size: 0.68rem; cursor: pointer; border: 1.5px solid #d8d0f0; background: #fdfbff; color: #888; text-align: center; }
+.more-time-type-label { font-family: 'Nunito', sans-serif; font-weight: 700; font-size: 0.68rem; color: #9070b0; }
+.more-time-type { display: flex; gap: 5px; }
+.effort-btn { flex: 1; border-radius: 8px; padding: 5px 3px; font-family: 'Nunito', sans-serif; font-weight: 700; font-size: 0.65rem; cursor: pointer; border: 1.5px solid #d8d0f0; background: #fdfbff; color: #888; text-align: center; }
 .effort-btn.selected-budget { background: #e8f5ec; border-color: #80c898; color: #208050; }
 .effort-btn.selected-bonus { background: #fff8e4; border-color: #d0b050; color: #a07010; }
-.confirm-more-btn { background: linear-gradient(135deg, #f0d8f8, #c080b0); color: #fff; border: none; border-radius: 10px; padding: 7px; font-family: 'Nunito', sans-serif; font-weight: 800; font-size: 0.78rem; cursor: pointer; width: 100%; }
+.confirm-more-btn { background: linear-gradient(135deg, #f0d8f8, #c080b0); color: #fff; border: none; border-radius: 10px; padding: 6px; font-family: 'Nunito', sans-serif; font-weight: 800; font-size: 0.72rem; cursor: pointer; width: 100%; }
 
-.slot-footer { padding: 6px 14px; display: flex; justify-content: flex-end; }
-.remove-slot-btn { background: none; border: none; color: #d0c8e0; font-size: 0.68rem; cursor: pointer; font-family: 'Nunito', sans-serif; font-weight: 600; }
+.slot-footer { padding: 5px 12px; display: flex; justify-content: flex-end; }
+.remove-slot-btn { background: none; border: none; color: #d0c8e0; font-size: 0.65rem; cursor: pointer; font-family: 'Nunito', sans-serif; font-weight: 600; }
 .remove-slot-btn:hover { color: #c080b0; }
 
 /* STICKER PICKER */
@@ -264,9 +268,59 @@
   font-family: 'Nunito', sans-serif; font-size: 1.1rem; color: #9070b0; font-weight: 700;
 }
 
+/* ── TABLET ── */
 @media (max-width: 860px) {
-  .planner-body { grid-template-columns: 1fr; }
-  .slots-section { position: static; max-height: none; }
+  .planner-body { grid-template-columns: 1fr 200px; }
+  .topics-section { padding: 16px 16px; }
+  .slots-section { padding: 16px 10px; }
+}
+
+/* ── PHONE ── */
+@media (max-width: 480px) {
+  #planner-screen { padding: 8px 8px 80px; }
+
+  .planner-header { padding: 10px 12px; gap: 6px; }
+  .planner-logo { font-size: 1.1rem; }
+  .replan-btn { padding: 4px 8px; font-size: 0.58rem; }
+  .recalibrate-btn { padding: 4px 8px; font-size: 0.58rem; }
+
+  .dashboard-section { padding: 12px 10px; }
+  .dashboard-card { padding: 14px 10px; }
+  .rings-row { gap: 10px; flex-wrap: nowrap; justify-content: space-around; }
+  .ring-container { width: 82px; height: 82px; }
+  .ring-container svg { width: 82px; height: 82px; }
+  .ring-val { font-size: 0.8rem; }
+  .ring-unit { font-size: 0.5rem; }
+  .ring-label { font-size: 0.58rem; max-width: 72px; }
+
+  .planner-body { grid-template-columns: 1fr 140px; }
+  .topics-section { padding: 10px 8px; }
+  .slots-section { padding: 10px 6px; top: 0; }
+
+  .subject-row { padding: 8px 8px; gap: 5px; }
+  .subj-row-emoji { font-size: 0.95rem; }
+  .subj-row-name { font-size: 0.75rem; }
+  .subj-row-pct { font-size: 0.6rem; }
+  .subj-prog-wrap { width: 30px; }
+  .chevron { font-size: 0.6rem; }
+
+  .topic-row { padding: 6px 6px 6px 14px; gap: 5px; }
+  .topic-name { font-size: 0.72rem; }
+  .topic-time { font-size: 0.6rem; padding: 1px 5px; }
+  .topic-check { width: 16px; height: 16px; }
+  .topic-drag-handle { font-size: 0.75rem; }
+
+  .slots-title { font-size: 0.72rem; margin-bottom: 6px; }
+  .add-slot-btn { font-size: 0.65rem; padding: 8px 4px; }
+  .slot-drop-zone { font-size: 0.62rem; padding: 10px 6px; min-height: 44px; }
+  .slot-topic-name { font-size: 0.7rem; }
+  .slot-topic-meta { font-size: 0.56rem; }
+  .timer-display { font-size: 1.4rem; letter-spacing: 1px; }
+  .dur-btn { font-size: 0.6rem; padding: 2px 5px; }
+  .done-yes-btn, .done-more-btn { font-size: 0.6rem; padding: 5px 2px; }
+  .dur-label { font-size: 0.65rem; }
+  .more-time-label, .more-time-type-label { font-size: 0.62rem; }
+  .effort-btn { font-size: 0.58rem; }
 }
 </style>
 </head>
@@ -344,7 +398,7 @@
     </div>
     <div class="slots-section">
       <div class="slots-title">🎯 Study Workbench</div>
-      <button class="add-slot-btn" onclick="addSlot()">＋ Add Study Slot</button>
+      <button class="add-slot-btn" onclick="addSlot()">＋ Add Slot</button>
       <div id="slots-list"></div>
     </div>
   </div>
