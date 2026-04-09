@@ -13,8 +13,7 @@ let pendingStickerSubjId = null;
 let pendingStickerEl = null;
 let selectedStickerEmoji = null;
 
-// Track which topicKey is loaded in which slotId
-// { topicKey: slotId } — so we can clear highlight when slot is removed
+// { topicKey: slotId } — tracks which topic is loaded in which slot
 let topicSlotMap = {};
 
 const CIRCUMFERENCE = 364;
@@ -46,10 +45,7 @@ async function loadPlan() {
 
   const today = new Date().toDateString();
   const lastSaved = data.last_saved_date || '';
-  if (lastSaved !== today) {
-    todayMins = 0;
-    bonusMins = 0;
-  }
+  if (lastSaved !== today) { todayMins = 0; bonusMins = 0; }
 
   const savedOpen = localStorage.getItem('openSubjects');
   if (savedOpen) {
@@ -58,6 +54,12 @@ async function loadPlan() {
 
   document.getElementById('planner-loading').style.display = 'none';
   document.getElementById('planner-screen').style.display = 'block';
+
+  // Escape key closes sticker overlay
+  document.addEventListener('keydown', e => {
+    if (e.key === 'Escape') closeStickerOverlay();
+  });
+
   renderTopicsTable();
   updateDashboard();
   restoreSlotsFromStorage();
@@ -209,7 +211,6 @@ function recalibrate() {
 }
 
 // ── HIGHLIGHT HELPERS ──
-// Add highlight to a specific topic row without clearing others
 function addTopicHighlight(key, isRev) {
   const selector = isRev
     ? `[data-key="${key}"].revision-row`
@@ -218,13 +219,31 @@ function addTopicHighlight(key, isRev) {
   if (row) row.classList.add('in-slot');
 }
 
-// Clear highlight for a specific topic key
 function clearTopicHighlight(key, isRev) {
   const selector = isRev
     ? `[data-key="${key}"].revision-row`
     : `[data-key="${key}"]:not(.revision-row)`;
   const row = document.querySelector(selector);
   if (row) row.classList.remove('in-slot');
+}
+
+function updatePlusBtn(key, inSlot) {
+  const btn = document.getElementById(`plus-btn-${key}`);
+  if (!btn) return;
+  if (inSlot) {
+    btn.textContent = '−';
+    btn.classList.add('minus');
+    btn.title = 'Remove from study slot';
+  } else {
+    btn.textContent = '+';
+    btn.classList.remove('minus');
+    btn.title = 'Add to study slot';
+  }
+}
+
+// ── DONE CHECK — unified: topic is fully done only when prep AND revision both done ──
+function isTopicFullyDone(meta) {
+  return meta && meta.prepDone && meta.revDone;
 }
 
 // ── RENDER ──
@@ -272,7 +291,8 @@ function renderTopicsTable() {
       const meta = topicMeta[`${s.id}_${i}`];
       if (!meta) return;
       subjTotal++;
-      if (meta.prepDone) subjDone++;
+      // Subject row % uses unified done check
+      if (isTopicFullyDone(meta)) subjDone++;
     });
     const subjPct = subjTotal > 0 ? subjDone / subjTotal : 0;
     const isAmber = shouldNudge && subjDone === 0 && !examPast;
@@ -312,8 +332,9 @@ function renderTopicsTable() {
         const meta = topicMeta[key];
         if (!meta) return;
 
+        const isInSlot = key in topicSlotMap;
+
         const row = document.createElement('div');
-        const isInSlot = Object.keys(topicSlotMap).includes(key);
         row.className = `topic-row${isAmber && !meta.prepDone ? ' amber-topic' : ''}${isInSlot ? ' in-slot' : ''}`;
         row.dataset.key = key;
         row.draggable = !meta.prepDone;
@@ -325,7 +346,7 @@ function renderTopicsTable() {
         }
 
         const nameEl = document.createElement('span');
-        nameEl.className = `topic-name${meta.prepDone ? ' done-text' : ''}${isInSlot ? ' in-slot-name' : ''}`;
+        nameEl.className = `topic-name${meta.prepDone ? ' done-text' : ''}`;
         nameEl.textContent = topic;
         nameEl.title = topic;
 
@@ -338,36 +359,39 @@ function renderTopicsTable() {
         check.className = `topic-check${meta.prepDone ? ' checked' : ''}`;
         check.onclick = e => { e.stopPropagation(); togglePrepDone(key, s.id); };
 
-        // + button — only on unfinished prep topics
+        row.appendChild(nameEl);
+        row.appendChild(timeEl);
+        row.appendChild(check);
+
         if (!meta.prepDone) {
           const plusBtn = document.createElement('button');
-          plusBtn.className = 'topic-plus-btn';
-          plusBtn.textContent = '+';
-          plusBtn.title = 'Add to study slot';
+          plusBtn.className = 'topic-plus-btn' + (isInSlot ? ' minus' : '');
+          plusBtn.id = `plus-btn-${key}`;
+          plusBtn.textContent = isInSlot ? '−' : '+';
+          plusBtn.title = isInSlot ? 'Remove from study slot' : 'Add to study slot';
           plusBtn.onclick = e => {
             e.stopPropagation();
-            quickAddToSlot(key);
+            if (isInSlot) {
+              removeSlot(topicSlotMap[key]);
+            } else {
+              quickAddToSlot(key);
+            }
           };
-          row.appendChild(nameEl);
-          row.appendChild(timeEl);
-          row.appendChild(check);
           row.appendChild(plusBtn);
         } else {
           const handle = document.createElement('span');
           handle.className = 'topic-drag-handle';
           handle.textContent = '⠿';
-          row.appendChild(nameEl);
-          row.appendChild(timeEl);
-          row.appendChild(check);
           row.appendChild(handle);
         }
 
         topicsList.appendChild(row);
 
-        // Revision row
+        // Revision row — only after prep done
         if (meta.prepDone) {
+          const revKey = key + '|rev';
+          const revInSlot = revKey in topicSlotMap;
           const revRow = document.createElement('div');
-          const revInSlot = Object.keys(topicSlotMap).includes(key + '|rev');
           revRow.className = `topic-row revision-row${revInSlot ? ' in-slot' : ''}`;
           revRow.dataset.key = key;
           revRow.draggable = !meta.revDone;
@@ -414,14 +438,12 @@ function renderTopicsTable() {
 
 // ── QUICK ADD TO SLOT via + button ──
 function quickAddToSlot(key) {
-  // Always create a new slot
   addSlot();
   const newSlot = slots[slots.length - 1];
   loadTopicIntoSlot(newSlot.id, key, false);
-  // Highlight the topic row
-  addTopicHighlight(key, false);
-  // Track in map
   topicSlotMap[key] = newSlot.id;
+  addTopicHighlight(key, false);
+  updatePlusBtn(key, true);
   showToast('✓ Added to study slot!');
 }
 
@@ -453,9 +475,8 @@ function togglePrepDone(key, subjId) {
       totalSpentMins += remaining;
     }
     confettiBomb();
-    balloonBomb();
     showToast(randomMsg('prep'));
-    checkSubjectComplete(subjId);
+    // No sticker check here — only check after revision done too
   }
   renderTopicsTable();
   updateDashboard();
@@ -482,7 +503,9 @@ function toggleRevDone(key, subjId) {
       totalSpentMins += remaining;
     }
     confettiBomb();
+    balloonBomb();
     showToast(randomMsg('revision'));
+    // Check subject complete only after revision done
     checkSubjectComplete(subjId);
   }
   renderTopicsTable();
@@ -490,12 +513,13 @@ function toggleRevDone(key, subjId) {
   savePlannerState();
 }
 
+// ── CHECK SUBJECT COMPLETE — only when ALL topics have BOTH prep AND revision done ──
 function checkSubjectComplete(subjId) {
   const s = plan.subjects.find(s => s.id === subjId);
   if (!s || !s.topics?.length) return;
   const allDone = s.topics.every((t, i) => {
     const meta = topicMeta[`${s.id}_${i}`];
-    return meta && meta.prepDone;
+    return isTopicFullyDone(meta);
   });
   if (allDone && !subjectBadges[subjId]) {
     pendingStickerSubjId = subjId;
@@ -513,13 +537,17 @@ function selectSticker(el, emoji) {
 function confirmSticker() {
   if (!selectedStickerEmoji || !pendingStickerSubjId) return;
   subjectBadges[pendingStickerSubjId] = selectedStickerEmoji;
-  document.getElementById('sticker-overlay').classList.remove('open');
+  closeStickerOverlay();
   fireStickerBurst(selectedStickerEmoji);
+  renderTopicsTable();
+  savePlannerState();
+}
+
+function closeStickerOverlay() {
+  document.getElementById('sticker-overlay').classList.remove('open');
   selectedStickerEmoji = null;
   pendingStickerSubjId = null;
   document.querySelectorAll('.sticker-opt').forEach(o => o.classList.remove('selected'));
-  renderTopicsTable();
-  savePlannerState();
 }
 
 function fireStickerBurst(emoji) {
@@ -543,9 +571,19 @@ function fireStickerBurst(emoji) {
 }
 
 // ── DASHBOARD ──
+// Topic fully done = prep + revision both checked
+// Exam-past subjects = all their topics count as fully done regardless
 function calcTopicsDonePct() {
   let total = 0, done = 0;
-  Object.values(topicMeta).forEach(m => { total++; if (m.prepDone) done++; });
+  plan.subjects.forEach(s => {
+    const past = isExamPast(s);
+    (s.topics||[]).forEach((t, i) => {
+      const meta = topicMeta[`${s.id}_${i}`];
+      if (!meta) return;
+      total++;
+      if (past || isTopicFullyDone(meta)) done++;
+    });
+  });
   return total > 0 ? done / total : 0;
 }
 
@@ -578,6 +616,30 @@ function toggleSpeedMode() {
   btn.textContent = `⚡ Speed Mode: ${speedMode ? 'ON' : 'OFF'}`;
   btn.style.background = speedMode ? '#fde080' : '';
   btn.style.color = speedMode ? '#a07000' : '';
+}
+
+// ── BELL ALARM via Web Audio API ──
+function playBellAlarm() {
+  try {
+    const ctx = new (window.AudioContext || window.webkitAudioContext)();
+    // Play 3 bell tones spaced 0.7s apart
+    [0, 0.7, 1.4].forEach(offset => {
+      const osc = ctx.createOscillator();
+      const gain = ctx.createGain();
+      osc.connect(gain);
+      gain.connect(ctx.destination);
+      osc.type = 'sine';
+      osc.frequency.setValueAtTime(880, ctx.currentTime + offset);
+      osc.frequency.exponentialRampToValueAtTime(440, ctx.currentTime + offset + 0.6);
+      gain.gain.setValueAtTime(0, ctx.currentTime + offset);
+      gain.gain.linearRampToValueAtTime(0.4, ctx.currentTime + offset + 0.05);
+      gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + offset + 0.6);
+      osc.start(ctx.currentTime + offset);
+      osc.stop(ctx.currentTime + offset + 0.6);
+    });
+  } catch(e) {
+    console.warn('Bell alarm failed:', e);
+  }
 }
 
 // ── ANIMATIONS ──
@@ -628,7 +690,7 @@ function showToast(msg) {
 
 function randomMsg(type) {
   const msgs = {
-    prep: ['Mission Accomplished! You\'re on fire! 🔥','Level Up! Brain power +10! 💪','Nailed it! 🎯','Keep going, superstar! 🌟'],
+    prep: ['Great work! Keep going! 🔥','Level Up! Brain power +10! 💪','Nailed it! 🎯','Keep going, superstar! 🌟'],
     revision: ['Memory Locked! 🔒','Revision Master! Making it look easy. ✨','Double done! 💪','Sharp as a tack! 🧠'],
     bonus: ['Bonus Power earned! 🏆','Unstoppable energy! ⚡','Going above and beyond! 🚀','Extra effort = extra awesome! 🌟'],
   };
@@ -645,20 +707,20 @@ function addSlot() {
   card.className = 'slot-card';
   card.id = `slot-${id}`;
   card.innerHTML = `
-    <div class="slot-drop-zone" id="slot-drop-${id}">Drop a topic here 👆</div>
+    <div class="slot-drop-zone" id="slot-drop-${id}">Drop a topic here to begin 👆</div>
     <div class="slot-topic-loaded" id="slot-loaded-${id}">
       <div class="slot-topic-name" id="slot-tname-${id}"></div>
       <div class="slot-topic-meta" id="slot-tmeta-${id}"></div>
       <div class="slot-progress-bar-wrap"><div class="slot-progress-bar" id="slot-prog-${id}" style="width:0%"></div></div>
     </div>
     <div class="slot-duration-pick" id="slot-dur-${id}">
-      <div class="dur-label">How long?</div>
+      <div class="dur-label">How long is this session?</div>
       <div class="dur-btns" id="slot-dur-btns-${id}"></div>
       <div class="dur-custom">
         <input type="number" min="1" placeholder="custom" id="slot-custom-${id}">
         <span class="dur-max-note" id="slot-maxnote-${id}"></span>
       </div>
-      <button class="start-timer-btn" onclick="startTimer(${id})">🚀 Start!</button>
+      <button class="start-timer-btn" onclick="startTimer(${id})">🚀 Start Timer!</button>
     </div>
     <div class="slot-timer" id="slot-timer-${id}">
       <div class="timer-display" id="slot-time-${id}">00:00</div>
@@ -668,10 +730,10 @@ function addSlot() {
       </div>
     </div>
     <div class="slot-done-ask" id="slot-done-${id}">
-      <div class="done-ask-title">⏰ Time's up! Done?</div>
+      <div class="done-ask-title">⏰ Time's up! Are you done?</div>
       <div class="done-ask-btns">
-        <button class="done-yes-btn" onclick="markDone(${id})">✅ Yes!</button>
-        <button class="done-more-btn" onclick="showMoreTime(${id})">⏱ More time</button>
+        <button class="done-yes-btn" onclick="markDone(${id})">✅ Yes, Done!</button>
+        <button class="done-more-btn" onclick="showMoreTime(${id})">⏱ Need More Time</button>
       </div>
     </div>
     <div class="slot-more-time" id="slot-more-${id}">
@@ -682,12 +744,12 @@ function addSlot() {
         <button class="more-min-btn" onclick="selectMoreMins(${id},20,this)">20m</button>
         <button class="more-min-btn" onclick="selectMoreMins(${id},30,this)">30m</button>
       </div>
-      <div class="more-time-type-label">From plan or extra effort?</div>
+      <div class="more-time-type-label">Is this from your plan or extra effort?</div>
       <div class="more-time-type">
-        <button class="effort-btn" id="slot-budget-btn-${id}" onclick="selectEffortType(${id},'budget')">📅 My plan</button>
-        <button class="effort-btn" id="slot-bonus-btn-${id}" onclick="selectEffortType(${id},'bonus')">⭐ Extra!</button>
+        <button class="effort-btn" id="slot-budget-btn-${id}" onclick="selectEffortType(${id},'budget')">📅 From my plan</button>
+        <button class="effort-btn" id="slot-bonus-btn-${id}" onclick="selectEffortType(${id},'bonus')">⭐ Extra effort!</button>
       </div>
-      <button class="confirm-more-btn" onclick="confirmMoreTime(${id})">▶ Continue</button>
+      <button class="confirm-more-btn" onclick="confirmMoreTime(${id})">▶ Continue studying</button>
     </div>
     <div class="slot-footer">
       <button class="remove-slot-btn" onclick="removeSlot(${id})">✕ Remove</button>
@@ -708,12 +770,11 @@ function setupSlotDrop(id) {
     const data = e.dataTransfer.getData('text/plain');
     const isRev = data.endsWith('|rev');
     const key = isRev ? data.replace('|rev','') : data;
+    const mapKey = isRev ? key+'|rev' : key;
     loadTopicIntoSlot(id, key, isRev);
-    // Add highlight without clearing others
-    addTopicHighlight(key, isRev);
-    // Track in map
-    const mapKey = isRev ? key + '|rev' : key;
     topicSlotMap[mapKey] = id;
+    addTopicHighlight(key, isRev);
+    if (!isRev) updatePlusBtn(key, true);
   });
 }
 
@@ -740,7 +801,7 @@ function loadTopicIntoSlot(slotId, key, isRev) {
   const loaded = document.getElementById(`slot-loaded-${slotId}`);
   loaded.style.display = 'block';
   document.getElementById(`slot-tname-${slotId}`).textContent = isRev ? `↩ ${topicName} (Revision)` : topicName;
-  document.getElementById(`slot-tmeta-${slotId}`).textContent = `${subj?.emoji||''} ${subj?.name||''} · ${formatMins(remaining)} left`;
+  document.getElementById(`slot-tmeta-${slotId}`).textContent = `${subj?.emoji||''} ${subj?.name||''} · ${formatMins(remaining)} remaining`;
 
   const pct = allocMins > 0 ? Math.round(spentSoFar/allocMins*100) : 0;
   const prog = document.getElementById(`slot-prog-${slotId}`);
@@ -812,6 +873,7 @@ function runTimer(slotId) {
     if (slot.remainingSecs <= 0) {
       clearInterval(slot.timerInterval);
       slot.pendingMins = (slot.pendingMins||0) + slot.durationMins;
+      playBellAlarm();
       timerDone(slotId);
     }
   }, tick);
@@ -871,11 +933,12 @@ function markDone(slotId) {
     if (slot.isRev) {
       meta.revDone = true;
       confettiBomb();
+      balloonBomb();
       showToast(randomMsg('revision'));
+      checkSubjectComplete(subjId);
     } else {
       meta.prepDone = true;
       confettiBomb();
-      balloonBomb();
       if (overAllocated) {
         const subj = plan.subjects.find(s => s.id === subjId);
         const subjName = subj ? subj.name : 'this subject';
@@ -883,14 +946,14 @@ function markDone(slotId) {
       } else {
         showToast(randomMsg('prep'));
       }
-      checkSubjectComplete(subjId);
+      // No sticker check here — wait for revision too
     }
     openSubjects.add(subjId);
   }
 
-  // Clear highlight for this slot's topic
-  const mapKey = slot.isRev ? slot.topicKey + '|rev' : slot.topicKey;
+  const mapKey = slot.isRev ? slot.topicKey+'|rev' : slot.topicKey;
   clearTopicHighlight(slot.topicKey, slot.isRev);
+  if (!slot.isRev) updatePlusBtn(slot.topicKey, false);
   delete topicSlotMap[mapKey];
 
   renderTopicsTable();
@@ -959,15 +1022,14 @@ function logStudyTime(slot, mins) {
   updateDashboard();
 }
 
-// removeSlot called by user clicking ✕ Remove — clears highlight
 function removeSlot(slotId) {
   const slot = slots.find(s => s.id === slotId);
   if (slot) {
     clearInterval(slot.timerInterval);
-    // Clear highlight for this slot's topic
     if (slot.topicKey) {
-      const mapKey = slot.isRev ? slot.topicKey + '|rev' : slot.topicKey;
+      const mapKey = slot.isRev ? slot.topicKey+'|rev' : slot.topicKey;
       clearTopicHighlight(slot.topicKey, slot.isRev);
+      if (!slot.isRev) updatePlusBtn(slot.topicKey, false);
       delete topicSlotMap[mapKey];
     }
   }
@@ -977,7 +1039,6 @@ function removeSlot(slotId) {
   removeSlotFromStorage(slotId);
 }
 
-// removeSlotSilent called after markDone — highlight already cleared before calling this
 function removeSlotSilent(slotId) {
   const slot = slots.find(s => s.id === slotId);
   if (slot) clearInterval(slot.timerInterval);
@@ -1012,6 +1073,7 @@ function restoreSlotsFromStorage() {
     const mapKey = isRev ? key+'|rev' : key;
     topicSlotMap[mapKey] = newSlot.id;
     addTopicHighlight(key, isRev);
+    if (!isRev) updatePlusBtn(key, true);
   });
 }
 
