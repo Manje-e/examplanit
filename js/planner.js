@@ -10,10 +10,7 @@ let slotCounter = 0;
 let currentUserId = null;
 let openSubjects = new Set();
 let pendingStickerSubjId = null;
-let pendingStickerEl = null;
 let selectedStickerEmoji = null;
-
-// { topicKey: slotId } — tracks which topic is loaded in which slot
 let topicSlotMap = {};
 
 const CIRCUMFERENCE = 364;
@@ -44,8 +41,7 @@ async function loadPlan() {
   subjectBadges = data.subject_badges || {};
 
   const today = new Date().toDateString();
-  const lastSaved = data.last_saved_date || '';
-  if (lastSaved !== today) { todayMins = 0; bonusMins = 0; }
+  if ((data.last_saved_date || '') !== today) { todayMins = 0; bonusMins = 0; }
 
   const savedOpen = localStorage.getItem('openSubjects');
   if (savedOpen) {
@@ -54,11 +50,7 @@ async function loadPlan() {
 
   document.getElementById('planner-loading').style.display = 'none';
   document.getElementById('planner-screen').style.display = 'block';
-
-  // Escape key closes sticker overlay
-  document.addEventListener('keydown', e => {
-    if (e.key === 'Escape') closeStickerOverlay();
-  });
+  document.addEventListener('keydown', e => { if (e.key === 'Escape') closeStickerOverlay(); });
 
   renderTopicsTable();
   updateDashboard();
@@ -77,11 +69,6 @@ function calcBudgetBetween(startStr, endStr) {
     cur.setDate(cur.getDate() + 1);
   }
   return Math.round((wd * (parseFloat(plan.weekday_hrs)||0) + we * (parseFloat(plan.weekend_hrs)||0)) * 60);
-}
-
-function calcSubjectBudgetMins(subj) {
-  const examDate = subj.examDate || plan.exam_start;
-  return calcBudgetBetween(plan.study_start, examDate);
 }
 
 function calcTotalBudgetMins() {
@@ -212,17 +199,13 @@ function recalibrate() {
 
 // ── HIGHLIGHT HELPERS ──
 function addTopicHighlight(key, isRev) {
-  const selector = isRev
-    ? `[data-key="${key}"].revision-row`
-    : `[data-key="${key}"]:not(.revision-row)`;
+  const selector = isRev ? `[data-key="${key}"].revision-row` : `[data-key="${key}"]:not(.revision-row)`;
   const row = document.querySelector(selector);
   if (row) row.classList.add('in-slot');
 }
 
 function clearTopicHighlight(key, isRev) {
-  const selector = isRev
-    ? `[data-key="${key}"].revision-row`
-    : `[data-key="${key}"]:not(.revision-row)`;
+  const selector = isRev ? `[data-key="${key}"].revision-row` : `[data-key="${key}"]:not(.revision-row)`;
   const row = document.querySelector(selector);
   if (row) row.classList.remove('in-slot');
 }
@@ -230,20 +213,14 @@ function clearTopicHighlight(key, isRev) {
 function updatePlusBtn(key, inSlot) {
   const btn = document.getElementById(`plus-btn-${key}`);
   if (!btn) return;
-  if (inSlot) {
-    btn.textContent = '−';
-    btn.classList.add('minus');
-    btn.title = 'Remove from study slot';
-  } else {
-    btn.textContent = '+';
-    btn.classList.remove('minus');
-    btn.title = 'Add to study slot';
-  }
+  btn.textContent = inSlot ? '−' : '+';
+  btn.classList.toggle('minus', inSlot);
+  btn.title = inSlot ? 'Remove from study slot' : 'Add to study slot';
 }
 
-// ── DONE CHECK — unified: topic fully done = prep AND revision both checked ──
-function isTopicFullyDone(meta) {
-  return meta && meta.prepDone && meta.revDone;
+// ── DONE CHECK — prep-only ──
+function isTopicDone(meta) {
+  return meta && meta.prepDone;
 }
 
 // ── RENDER ──
@@ -291,7 +268,7 @@ function renderTopicsTable() {
       const meta = topicMeta[`${s.id}_${i}`];
       if (!meta) return;
       subjTotal++;
-      if (isTopicFullyDone(meta)) subjDone++;
+      if (isTopicDone(meta)) subjDone++;
     });
     const subjPct = subjTotal > 0 ? subjDone / subjTotal : 0;
     const isAmber = shouldNudge && subjDone === 0 && !examPast;
@@ -310,137 +287,124 @@ function renderTopicsTable() {
     group.className = 'subject-group';
 
     const subjectRow = document.createElement('div');
-    subjectRow.className = `subject-row${isAmber ? ' amber' : ''}${isOpen ? ' open' : ''}${examPast ? ' exam-past' : ''}`;
+    subjectRow.className = `subject-row${isAmber ? ' amber' : ''}${isOpen && !examPast ? ' open' : ''}${examPast ? ' exam-past' : ''}`;
     subjectRow.dataset.subjId = s.id;
     subjectRow.innerHTML = `
       <span class="subj-row-emoji">${s.emoji}</span>
       <span class="subj-row-name${examPast ? ' past-name' : ''}">${s.name}${badge ? ' <span class="subj-badge">'+badge+'</span>' : ''}${urgencyBadge}${doneBadge}</span>
       <span class="subj-row-pct">${Math.round(subjPct*100)}%</span>
       <div class="subj-prog-wrap"><div class="subj-prog-bar" style="width:${Math.round(subjPct*100)}%"></div></div>
-      <span class="chevron">▼</span>
+      ${!examPast ? '<span class="chevron">▼</span>' : ''}
     `;
-    // Always clickable — exam-past subjects can be expanded to view topics
-    subjectRow.onclick = () => toggleSubject(s.id);
+    if (!examPast) subjectRow.onclick = () => toggleSubject(s.id);
 
     const topicsList = document.createElement('div');
-    topicsList.className = `topics-list${isOpen ? ' open' : ''}`;
+    topicsList.className = `topics-list${isOpen && !examPast ? ' open' : ''}`;
     topicsList.id = `topics-${s.id}`;
 
-    // Render topics for all subjects — read-only for exam-past
-    s.topics.forEach((topic, i) => {
-      const key = `${s.id}_${i}`;
-      const meta = topicMeta[key];
-      if (!meta) return;
+    if (!examPast) {
+      s.topics.forEach((topic, i) => {
+        const key = `${s.id}_${i}`;
+        const meta = topicMeta[key];
+        if (!meta) return;
 
-      const isInSlot = key in topicSlotMap;
+        const isInSlot = key in topicSlotMap;
 
-      const row = document.createElement('div');
-      row.className = `topic-row${isAmber && !meta.prepDone ? ' amber-topic' : ''}${isInSlot ? ' in-slot' : ''}`;
-      row.dataset.key = key;
+        const row = document.createElement('div');
+        row.className = `topic-row${isAmber && !meta.prepDone ? ' amber-topic' : ''}${isInSlot ? ' in-slot' : ''}`;
+        row.dataset.key = key;
 
-      // Only draggable if active subject and prep not done
-      if (!examPast && !meta.prepDone) {
-        row.draggable = true;
-        row.addEventListener('dragstart', e => {
-          e.dataTransfer.setData('text/plain', key);
-          e.dataTransfer.effectAllowed = 'copy';
-        });
-      }
-
-      const nameEl = document.createElement('span');
-      nameEl.className = `topic-name${meta.prepDone ? ' done-text' : ''}`;
-      nameEl.textContent = topic;
-      nameEl.title = topic;
-
-      const remaining = Math.max(0, meta.prepMins - (meta.spentMins || 0));
-      const timeEl = document.createElement('span');
-      timeEl.className = `topic-time${meta.prepDone ? ' faded' : ''}`;
-      timeEl.textContent = meta.prepDone ? formatMins(meta.prepMins) : formatMins(remaining) + (meta.spentMins > 0 ? ' left' : '');
-
-      const check = document.createElement('div');
-      check.className = `topic-check${meta.prepDone ? ' checked' : ''}`;
-      // Only interactive if active subject
-      if (!examPast) {
-        check.onclick = e => { e.stopPropagation(); togglePrepDone(key, s.id); };
-      }
-
-      row.appendChild(nameEl);
-      row.appendChild(timeEl);
-      row.appendChild(check);
-
-      // + / − button only on active subjects, unfinished prep topics
-      if (!examPast && !meta.prepDone) {
-        const plusBtn = document.createElement('button');
-        plusBtn.className = 'topic-plus-btn' + (isInSlot ? ' minus' : '');
-        plusBtn.id = `plus-btn-${key}`;
-        plusBtn.textContent = isInSlot ? '−' : '+';
-        plusBtn.title = isInSlot ? 'Remove from study slot' : 'Add to study slot';
-        // Fix: check topicSlotMap live at click time, not via stale closure
-        plusBtn.onclick = e => {
-          e.stopPropagation();
-          if (key in topicSlotMap) {
-            removeSlot(topicSlotMap[key]);
-          } else {
-            quickAddToSlot(key);
-          }
-        };
-        row.appendChild(plusBtn);
-      } else if (!examPast) {
-        // Active subject, prep done — show drag handle
-        const handle = document.createElement('span');
-        handle.className = 'topic-drag-handle';
-        handle.textContent = '⠿';
-        row.appendChild(handle);
-      }
-
-      topicsList.appendChild(row);
-
-      // Revision row — only after prep done
-      if (meta.prepDone) {
-        const revKey = key + '|rev';
-        const revInSlot = revKey in topicSlotMap;
-        const revRow = document.createElement('div');
-        revRow.className = `topic-row revision-row${revInSlot ? ' in-slot' : ''}`;
-        revRow.dataset.key = key;
-
-        // Only draggable if active subject
-        if (!examPast && !meta.revDone) {
-          revRow.draggable = true;
-          revRow.addEventListener('dragstart', e => {
-            e.dataTransfer.setData('text/plain', key + '|rev');
+        if (!meta.prepDone) {
+          row.draggable = true;
+          row.addEventListener('dragstart', e => {
+            e.dataTransfer.setData('text/plain', key);
             e.dataTransfer.effectAllowed = 'copy';
           });
         }
 
-        const revName = document.createElement('span');
-        revName.className = `topic-name${meta.revDone ? ' done-text' : ''}`;
-        revName.textContent = `↩ ${topic} (Revision)`;
-        revName.title = `↩ ${topic} (Revision)`;
-        revName.style.color = meta.revDone ? '#bbb' : '#5090c0';
-        revName.style.fontSize = '0.78rem';
+        const nameEl = document.createElement('span');
+        nameEl.className = `topic-name${meta.prepDone ? ' done-text' : ''}`;
+        nameEl.textContent = topic;
+        nameEl.title = topic;
 
-        const revTime = document.createElement('span');
-        revTime.className = `topic-time revision-time${meta.revDone ? ' faded' : ''}`;
-        revTime.textContent = formatMins(meta.revMins);
+        const remaining = Math.max(0, meta.prepMins - (meta.spentMins || 0));
+        const timeEl = document.createElement('span');
+        timeEl.className = `topic-time${meta.prepDone ? ' faded' : ''}`;
+        timeEl.textContent = meta.prepDone ? formatMins(meta.prepMins) : formatMins(remaining) + (meta.spentMins > 0 ? ' left' : '');
 
-        const revCheck = document.createElement('div');
-        revCheck.className = `topic-check rev-check${meta.revDone ? ' checked' : ''}`;
-        // Only interactive if active subject
-        if (!examPast) {
-          revCheck.onclick = e => { e.stopPropagation(); toggleRevDone(key, s.id); };
+        const check = document.createElement('div');
+        check.className = `topic-check${meta.prepDone ? ' checked' : ''}`;
+        check.onclick = e => { e.stopPropagation(); togglePrepDone(key, s.id); };
+
+        row.appendChild(nameEl);
+        row.appendChild(timeEl);
+        row.appendChild(check);
+
+        if (!meta.prepDone) {
+          const plusBtn = document.createElement('button');
+          plusBtn.className = 'topic-plus-btn' + (isInSlot ? ' minus' : '');
+          plusBtn.id = `plus-btn-${key}`;
+          plusBtn.textContent = isInSlot ? '−' : '+';
+          plusBtn.title = isInSlot ? 'Remove from study slot' : 'Add to study slot';
+          plusBtn.onclick = e => {
+            e.stopPropagation();
+            if (key in topicSlotMap) {
+              removeSlot(topicSlotMap[key]);
+            } else {
+              quickAddToSlot(key);
+            }
+          };
+          row.appendChild(plusBtn);
+        } else {
+          const handle = document.createElement('span');
+          handle.className = 'topic-drag-handle';
+          handle.textContent = '⠿';
+          row.appendChild(handle);
         }
 
-        const revHandle = document.createElement('span');
-        revHandle.className = 'topic-drag-handle';
-        revHandle.textContent = '⠿';
+        topicsList.appendChild(row);
 
-        revRow.appendChild(revName);
-        revRow.appendChild(revTime);
-        revRow.appendChild(revCheck);
-        revRow.appendChild(revHandle);
-        topicsList.appendChild(revRow);
-      }
-    });
+        if (meta.prepDone) {
+          const revRow = document.createElement('div');
+          const revInSlot = (key + '|rev') in topicSlotMap;
+          revRow.className = `topic-row revision-row${revInSlot ? ' in-slot' : ''}`;
+          revRow.dataset.key = key;
+
+          if (!meta.revDone) {
+            revRow.draggable = true;
+            revRow.addEventListener('dragstart', e => {
+              e.dataTransfer.setData('text/plain', key + '|rev');
+              e.dataTransfer.effectAllowed = 'copy';
+            });
+          }
+
+          const revName = document.createElement('span');
+          revName.className = `topic-name${meta.revDone ? ' done-text' : ''}`;
+          revName.textContent = `↩ ${topic} (Revision)`;
+          revName.title = `↩ ${topic} (Revision)`;
+          revName.style.color = meta.revDone ? '#bbb' : '#5090c0';
+          revName.style.fontSize = '0.78rem';
+
+          const revTime = document.createElement('span');
+          revTime.className = `topic-time revision-time${meta.revDone ? ' faded' : ''}`;
+          revTime.textContent = formatMins(meta.revMins);
+
+          const revCheck = document.createElement('div');
+          revCheck.className = `topic-check rev-check${meta.revDone ? ' checked' : ''}`;
+          revCheck.onclick = e => { e.stopPropagation(); toggleRevDone(key, s.id); };
+
+          const revHandle = document.createElement('span');
+          revHandle.className = 'topic-drag-handle';
+          revHandle.textContent = '⠿';
+
+          revRow.appendChild(revName);
+          revRow.appendChild(revTime);
+          revRow.appendChild(revCheck);
+          revRow.appendChild(revHandle);
+          topicsList.appendChild(revRow);
+        }
+      });
+    }
 
     group.appendChild(subjectRow);
     group.appendChild(topicsList);
@@ -488,6 +452,7 @@ function togglePrepDone(key, subjId) {
     }
     confettiBomb();
     showToast(randomMsg('prep'));
+    checkSubjectComplete(subjId);
   }
   renderTopicsTable();
   updateDashboard();
@@ -516,21 +481,17 @@ function toggleRevDone(key, subjId) {
     confettiBomb();
     balloonBomb();
     showToast(randomMsg('revision'));
-    checkSubjectComplete(subjId);
   }
   renderTopicsTable();
   updateDashboard();
   savePlannerState();
 }
 
-// ── CHECK SUBJECT COMPLETE — only when ALL topics have BOTH prep AND revision done ──
+// ── CHECK SUBJECT COMPLETE — prep-only ──
 function checkSubjectComplete(subjId) {
   const s = plan.subjects.find(s => s.id === subjId);
   if (!s || !s.topics?.length) return;
-  const allDone = s.topics.every((t, i) => {
-    const meta = topicMeta[`${s.id}_${i}`];
-    return isTopicFullyDone(meta);
-  });
+  const allDone = s.topics.every((t, i) => isTopicDone(topicMeta[`${s.id}_${i}`]));
   if (allDone && !subjectBadges[subjId]) {
     pendingStickerSubjId = subjId;
     document.getElementById('sticker-overlay').classList.add('open');
@@ -581,8 +542,7 @@ function fireStickerBurst(emoji) {
 }
 
 // ── DASHBOARD ──
-// Exam-past subjects: all topics count as fully done
-// Active subjects: topic done only when both prep AND revision checked
+// Portion roadmap: exam-past subjects = full credit, active = prep-done count
 function calcTopicsDonePct() {
   let total = 0, done = 0;
   plan.subjects.forEach(s => {
@@ -591,7 +551,7 @@ function calcTopicsDonePct() {
       const meta = topicMeta[`${s.id}_${i}`];
       if (!meta) return;
       total++;
-      if (past || isTopicFullyDone(meta)) done++;
+      if (past || isTopicDone(meta)) done++;
     });
   });
   return total > 0 ? done / total : 0;
@@ -628,7 +588,7 @@ function toggleSpeedMode() {
   btn.style.color = speedMode ? '#a07000' : '';
 }
 
-// ── BELL ALARM via Web Audio API ──
+// ── BELL ALARM ──
 function playBellAlarm() {
   try {
     const ctx = new (window.AudioContext || window.webkitAudioContext)();
@@ -646,21 +606,17 @@ function playBellAlarm() {
       osc.start(ctx.currentTime + offset);
       osc.stop(ctx.currentTime + offset + 0.6);
     });
-  } catch(e) {
-    console.warn('Bell alarm failed:', e);
-  }
+  } catch(e) { console.warn('Bell alarm failed:', e); }
 }
 
 // ── ANIMATIONS ──
 function confettiBomb() {
-  const count = 120;
-  confetti({particleCount:count/2,angle:60,spread:70,origin:{x:0,y:0.6},colors:['#c8b8f8','#f9c74f','#ff6b9d','#43aa8b','#f94144']});
-  confetti({particleCount:count/2,angle:120,spread:70,origin:{x:1,y:0.6},colors:['#c8b8f8','#f9c74f','#ff6b9d','#43aa8b','#f94144']});
+  confetti({particleCount:60,angle:60,spread:70,origin:{x:0,y:0.6},colors:['#c8b8f8','#f9c74f','#ff6b9d','#43aa8b','#f94144']});
+  confetti({particleCount:60,angle:120,spread:70,origin:{x:1,y:0.6},colors:['#c8b8f8','#f9c74f','#ff6b9d','#43aa8b','#f94144']});
 }
 
 function balloonBomb() {
-  const duration = 2000;
-  const end = Date.now() + duration;
+  const end = Date.now() + 2000;
   (function frame() {
     confetti({particleCount:6,angle:60,spread:55,origin:{x:0,y:0.7},colors:['#ff6b9d','#f9c74f','#c8b8f8']});
     confetti({particleCount:6,angle:120,spread:55,origin:{x:1,y:0.7},colors:['#43aa8b','#f94144','#c8b8f8']});
@@ -700,7 +656,7 @@ function showToast(msg) {
 function randomMsg(type) {
   const msgs = {
     prep: ['Great work! Keep going! 🔥','Level Up! Brain power +10! 💪','Nailed it! 🎯','Keep going, superstar! 🌟'],
-    revision: ['Memory Locked! 🔒','Revision Master! Making it look easy. ✨','Double done! 💪','Sharp as a tack! 🧠'],
+    revision: ['Memory Locked! 🔒','Revision Master! ✨','Double done! 💪','Sharp as a tack! 🧠'],
     bonus: ['Bonus Power earned! 🏆','Unstoppable energy! ⚡','Going above and beyond! 🚀','Extra effort = extra awesome! 🌟'],
   };
   const list = msgs[type] || msgs.prep;
@@ -803,12 +759,10 @@ function loadTopicIntoSlot(slotId, key, isRev) {
   slot.topicKey = key;
   slot.isRev = isRev;
   slot.allocMins = remaining;
-
   saveSlotToStorage(slotId, key, isRev);
 
   document.getElementById(`slot-drop-${slotId}`).style.display = 'none';
-  const loaded = document.getElementById(`slot-loaded-${slotId}`);
-  loaded.style.display = 'block';
+  document.getElementById(`slot-loaded-${slotId}`).style.display = 'block';
   document.getElementById(`slot-tname-${slotId}`).textContent = isRev ? `↩ ${topicName} (Revision)` : topicName;
   document.getElementById(`slot-tmeta-${slotId}`).textContent = `${subj?.emoji||''} ${subj?.name||''} · ${formatMins(remaining)} remaining`;
 
@@ -938,23 +892,22 @@ function markDone(slotId) {
   if (meta) {
     const spent = slot.isRev ? (meta.revSpentMins||0) : (meta.spentMins||0);
     const alloc = slot.isRev ? meta.revMins : meta.prepMins;
-    const overAllocated = !slot.isRev && spent > alloc;
     if (slot.isRev) {
       meta.revDone = true;
       confettiBomb();
       balloonBomb();
       showToast(randomMsg('revision'));
-      checkSubjectComplete(subjId);
     } else {
       meta.prepDone = true;
       confettiBomb();
-      if (overAllocated) {
+      balloonBomb();
+      if (spent > alloc) {
         const subj = plan.subjects.find(s => s.id === subjId);
-        const subjName = subj ? subj.name : 'this subject';
-        setTimeout(() => showToast(`Took longer than planned. Hit Recalibrate to adjust ${subjName} 🔄`), 2500);
+        setTimeout(() => showToast(`Took longer than planned. Hit Recalibrate to adjust ${subj?.name||'this subject'} 🔄`), 2500);
       } else {
         showToast(randomMsg('prep'));
       }
+      checkSubjectComplete(subjId);
     }
     openSubjects.add(subjId);
   }
